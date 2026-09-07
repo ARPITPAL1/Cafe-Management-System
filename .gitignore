@@ -15,6 +15,7 @@ local_settings.py
 node_modules/
 frontend/node_modules/
 dist/
+**/dist/
 frontend/dist/
 dist-ssr/
 *.local
