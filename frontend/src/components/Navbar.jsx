@@ -19,6 +19,10 @@ import {
   Code,
   Calendar,
   LogIn,
+  LogOut,
+  Lock,
+  KeyRound,
+  X,
   ExternalLink,
   Sparkles,
   Layers
@@ -26,9 +30,10 @@ import {
 import ReservationsManagementModal from './ReservationsManagementModal';
 import PreBookQRModal from './PreBookQRModal';
 import { api } from '../services/api';
+import { getRoleHomePath } from '../context/AuthContext';
 
 export default function Navbar() {
-  const { user, cafeInfo, loginAs, waiterCallAlertsEnabled, toggleWaiterCallAlerts } = useAuth();
+  const { user, cafeInfo, login, logout, waiterCallAlertsEnabled, toggleWaiterCallAlerts } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -36,6 +41,13 @@ export default function Navbar() {
   const [reservationsModalOpen, setReservationsModalOpen] = useState(false);
   const [preBookQRModalOpen, setPreBookQRModalOpen] = useState(false);
   const [pendingReservationsCount, setPendingReservationsCount] = useState(0);
+
+  // Role Switch Password Modal state
+  const [switchModalOpen, setSwitchModalOpen] = useState(false);
+  const [switchTarget, setSwitchTarget] = useState(null);
+  const [switchPassword, setSwitchPassword] = useState('');
+  const [switchError, setSwitchError] = useState('');
+  const [switchLoading, setSwitchLoading] = useState(false);
 
   useEffect(() => {
     const checkReservations = () => {
@@ -57,8 +69,42 @@ export default function Navbar() {
     { to: '/admin/menu', label: 'Menu', icon: BookOpen, roles: ['OWNER', 'MANAGER'] },
     { to: '/admin/reports', label: 'Sales', icon: TrendingUp, roles: ['OWNER', 'MANAGER'] },
     { to: '/admin/customers', label: 'Customers', icon: Users, roles: ['OWNER', 'MANAGER'] },
-    { to: '/admin/settings', label: 'Owner & Settings', icon: Settings, roles: ['OWNER', 'MANAGER'] },
+    { to: '/admin/settings', label: 'Owner & Settings', icon: Settings, roles: ['OWNER'] },
   ];
+
+  const roleItems = [
+    { role: 'OWNER', label: 'Owner / Admin', id: 'Owner@10' },
+    { role: 'MANAGER', label: 'Manager', id: 'Manager@10' },
+    { role: 'CASHIER', label: 'Cashier (Billing)', id: 'Cashier@10' },
+    { role: 'KITCHEN', label: 'Kitchen Chef', id: 'Kitchen@10' },
+  ];
+
+  const handleRoleClick = (item) => {
+    setRoleMenuOpen(false);
+    if (user?.role === item.role) return;
+    setSwitchTarget(item);
+    setSwitchPassword('');
+    setSwitchError('');
+    setSwitchModalOpen(true);
+  };
+
+  const handleConfirmSwitch = async (e) => {
+    e.preventDefault();
+    if (!switchTarget) return;
+    setSwitchLoading(true);
+    setSwitchError('');
+    try {
+      await login(switchTarget.id, switchPassword);
+      setSwitchModalOpen(false);
+      setSwitchPassword('');
+      const targetHome = getRoleHomePath(switchTarget.role);
+      navigate(targetHome);
+    } catch (err) {
+      setSwitchError(err.message || 'Incorrect password');
+    } finally {
+      setSwitchLoading(false);
+    }
+  };
 
   const filteredLinks = navLinks.filter(l => l.roles.includes(user?.role || 'OWNER'));
 
@@ -266,20 +312,11 @@ export default function Navbar() {
                   <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', padding: '6px 8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                     Switch Role
                   </div>
-                  {[
-                    { role: 'OWNER', label: 'Owner / Admin' },
-                    { role: 'MANAGER', label: 'Manager' },
-                    { role: 'CASHIER', label: 'Cashier (Billing)' },
-                    { role: 'KITCHEN', label: 'Kitchen Chef' },
-                  ].map(item => (
+                  {roleItems.map(item => (
                     <button
                       key={item.role}
-                      onClick={() => {
-                        loginAs(item.role);
-                        setRoleMenuOpen(false);
-                        if (item.role === 'KITCHEN') navigate('/admin/kitchen');
-                        else if (item.role === 'CASHIER') navigate('/admin/billing');
-                      }}
+                      type="button"
+                      onClick={() => handleRoleClick(item)}
                       style={{
                         width: '100%',
                         textAlign: 'left',
@@ -297,12 +334,17 @@ export default function Navbar() {
                         marginBottom: 2
                       }}
                     >
-                      <span>{item.label}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span>{item.label}</span>
+                        {user?.role !== item.role && (
+                          <Lock size={10} color="var(--text-muted)" />
+                        )}
+                      </div>
                       {user?.role === item.role && <span style={{ color: 'var(--accent-gold)' }}>✓</span>}
                     </button>
                   ))}
 
-                  <div style={{ borderTop: '1px solid var(--border-subtle)', marginTop: 6, paddingTop: 6 }}>
+                  <div style={{ borderTop: '1px solid var(--border-subtle)', marginTop: 6, paddingTop: 6, display: 'flex', flexDirection: 'column', gap: 2 }}>
                     <Link
                       to="/login"
                       onClick={() => setRoleMenuOpen(false)}
@@ -319,8 +361,35 @@ export default function Navbar() {
                       }}
                     >
                       <LogIn size={13} color="var(--accent-gold)" />
-                      <span>Login Portal</span>
+                      <span>Switch Account Portal</span>
                     </Link>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRoleMenuOpen(false);
+                        logout();
+                        navigate('/login');
+                      }}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        padding: '6px 8px',
+                        fontSize: '0.78rem',
+                        color: '#ef4444',
+                        background: 'transparent',
+                        border: 'none',
+                        borderRadius: 'var(--radius-sm)',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        width: '100%',
+                        textAlign: 'left'
+                      }}
+                    >
+                      <LogOut size={13} color="#ef4444" />
+                      <span>Sign Out / Lock</span>
+                    </button>
                   </div>
                 </div>
               )}
@@ -516,6 +585,119 @@ export default function Navbar() {
         isOpen={preBookQRModalOpen}
         onClose={() => setPreBookQRModalOpen(false)}
       />
+
+      {/* Role Switch Password Authentication Modal */}
+      {switchModalOpen && switchTarget && (
+        <div className="modal-backdrop" onClick={() => setSwitchModalOpen(false)}>
+          <div className="modal-card" onClick={e => e.stopPropagation()} style={{ maxWidth: 390, padding: 24 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{
+                  width: 34,
+                  height: 34,
+                  borderRadius: 10,
+                  background: 'rgba(212,175,55,0.15)',
+                  color: 'var(--accent-gold)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}>
+                  <Lock size={17} />
+                </div>
+                <div>
+                  <h3 style={{ fontSize: '1.08rem', fontWeight: 800 }}>Role Authentication</h3>
+                  <p style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
+                    Switch to {switchTarget.label}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSwitchModalOpen(false)}
+                style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {switchError && (
+              <div style={{
+                background: 'rgba(239,68,68,0.1)',
+                border: '1px solid rgba(239,68,68,0.25)',
+                color: '#ef4444',
+                padding: '8px 12px',
+                borderRadius: 6,
+                fontSize: '0.78rem',
+                marginBottom: 14
+              }}>
+                {switchError}
+              </div>
+            )}
+
+            <form onSubmit={handleConfirmSwitch}>
+              <div style={{ marginBottom: 16 }}>
+                <div style={{
+                  background: 'var(--bg-surface-elevated)',
+                  borderRadius: 'var(--radius-sm)',
+                  padding: '10px 12px',
+                  marginBottom: 12,
+                  fontSize: '0.8rem',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  border: '1px solid var(--border-subtle)'
+                }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Target Staff ID:</span>
+                  <strong style={{ fontFamily: 'monospace', color: 'var(--accent-gold)' }}>{switchTarget.id}</strong>
+                </div>
+
+                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, marginBottom: 6 }}>
+                  Enter Dedicated Password
+                </label>
+                <div style={{ position: 'relative' }}>
+                  <KeyRound size={15} color="var(--text-muted)" style={{ position: 'absolute', left: 10, top: 11 }} />
+                  <input
+                    type="password"
+                    required
+                    autoFocus
+                    placeholder={`e.g. ${switchTarget.id}`}
+                    value={switchPassword}
+                    onChange={e => setSwitchPassword(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '9px 12px 9px 34px',
+                      borderRadius: 'var(--radius-sm)',
+                      background: 'var(--bg-main)',
+                      border: '1px solid var(--border-medium)',
+                      color: 'var(--text-primary)',
+                      fontFamily: 'inherit',
+                      fontSize: '0.9rem'
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button
+                  type="button"
+                  onClick={() => setSwitchModalOpen(false)}
+                  className="btn btn-secondary btn-sm"
+                  style={{ flex: 1 }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={switchLoading}
+                  className="btn btn-primary btn-sm"
+                  style={{ flex: 2 }}
+                >
+                  {switchLoading ? 'Verifying...' : 'Authenticate & Switch'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </>
   );
 }

@@ -1,6 +1,6 @@
 import React from 'react';
-import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
-import { AuthProvider } from './context/AuthContext';
+import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom';
+import { AuthProvider, useAuth, canRoleAccessRoute, getRoleHomePath } from './context/AuthContext';
 import { CartProvider } from './context/CartContext';
 import Navbar from './components/Navbar';
 
@@ -14,6 +14,7 @@ import MenuManagement from './pages/management/MenuManagement';
 import ReportsAnalytics from './pages/management/ReportsAnalytics';
 import CustomerDirectory from './pages/management/CustomerDirectory';
 import CafeSettings from './pages/management/CafeSettings';
+
 // Auth & Setup
 import LoginPage from './pages/auth/LoginPage';
 
@@ -21,7 +22,20 @@ import LoginPage from './pages/auth/LoginPage';
 import CustomerPortal from './pages/customer/CustomerPortal';
 import AdvanceBookingPage from './pages/customer/AdvanceBookingPage';
 
-function ManagementLayout() {
+function ProtectedManagementLayout() {
+  const { user } = useAuth();
+  const location = useLocation();
+
+  if (!user) {
+    return <Navigate to="/login" state={{ from: location.pathname }} replace />;
+  }
+
+  // Check RBAC permission for current route
+  if (!canRoleAccessRoute(user.role, location.pathname)) {
+    const fallbackPath = getRoleHomePath(user.role);
+    return <Navigate to={fallbackPath} replace />;
+  }
+
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
       <Navbar />
@@ -32,13 +46,31 @@ function ManagementLayout() {
   );
 }
 
+function DashboardRoute() {
+  const { user } = useAuth();
+  if (user?.role === 'CASHIER') return <Navigate to="/admin/billing" replace />;
+  if (user?.role === 'KITCHEN') return <Navigate to="/admin/kitchen" replace />;
+  return <Dashboard />;
+}
+
+function RootRedirect() {
+  const { user } = useAuth();
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
+  return <Navigate to={getRoleHomePath(user.role)} replace />;
+}
+
 export default function App() {
   return (
     <AuthProvider>
       <CartProvider>
         <BrowserRouter>
           <Routes>
-            {/* Role Authentication & Verification */}
+            {/* Direct entry point: if logged in goes to role home, else login */}
+            <Route path="/" element={<RootRedirect />} />
+
+            {/* Role Authentication Portal */}
             <Route path="/login" element={<LoginPage />} />
 
             {/* Customer QR Route: Table-specific token e.g. /t/8fJ39Kd82L */}
@@ -48,9 +80,9 @@ export default function App() {
             <Route path="/book-table" element={<AdvanceBookingPage />} />
             <Route path="/reservations" element={<AdvanceBookingPage />} />
 
-            {/* Management Portal Routes */}
-            <Route path="/admin" element={<ManagementLayout />}>
-              <Route index element={<Dashboard />} />
+            {/* Management Portal Routes - Protected with RBAC */}
+            <Route path="/admin" element={<ProtectedManagementLayout />}>
+              <Route index element={<DashboardRoute />} />
               <Route path="tables" element={<TableManagement />} />
               <Route path="orders" element={<OrdersManagement />} />
               <Route path="kitchen" element={<KitchenDisplay />} />
@@ -61,12 +93,11 @@ export default function App() {
               <Route path="settings" element={<CafeSettings />} />
             </Route>
 
-            {/* Fallback to Management Dashboard */}
-            <Route path="*" element={<Navigate to="/admin" replace />} />
+            {/* Fallback */}
+            <Route path="*" element={<RootRedirect />} />
           </Routes>
         </BrowserRouter>
       </CartProvider>
     </AuthProvider>
   );
 }
-

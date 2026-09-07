@@ -1,94 +1,104 @@
 import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { useAuth } from '../../context/AuthContext';
-import { api } from '../../services/api';
+import { useAuth, getRoleHomePath, STANDARD_ACCOUNTS } from '../../context/AuthContext';
 import {
   ShieldCheck,
   Lock,
-  Mail,
+  User,
   ArrowRight,
+  Eye,
+  EyeOff,
   Sparkles,
-  KeyRound,
-  CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  UtensilsCrossed,
+  Receipt,
+  ChefHat,
+  LayoutDashboard,
+  CheckCircle2
 } from 'lucide-react';
 
 export default function LoginPage() {
-  const { loginWithCredentials, cafeInfo } = useAuth();
+  const { login, cafeInfo } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState('OWNER');
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [showVerificationStep, setShowVerificationStep] = useState(false);
-  const [verificationCode, setVerificationCode] = useState('');
-  const [generatedCode, setGeneratedCode] = useState('');
+  const [selectedRoleKey, setSelectedRoleKey] = useState(null);
 
-  const quickRoles = [
-    { role: 'OWNER', email: 'owner@roastedbean.cafe', name: 'Owner (Full Access)' },
-    { role: 'MANAGER', email: 'manager@roastedbean.cafe', name: 'Floor Manager' },
-    { role: 'CASHIER', email: 'cashier@roastedbean.cafe', name: 'Cashier / POS' },
-    { role: 'KITCHEN', email: 'kitchen@roastedbean.cafe', name: 'Kitchen Chef' }
+  const rolePresets = [
+    {
+      key: 'owner@10',
+      role: 'OWNER',
+      title: 'Owner / Admin',
+      id: 'Owner@10',
+      icon: LayoutDashboard,
+      color: '#d4af37',
+      bg: 'rgba(212,175,55,0.12)',
+      scope: 'Full Control: Settings, Menu BOM, Financials, Shifts & Reports'
+    },
+    {
+      key: 'manager@10',
+      role: 'MANAGER',
+      title: 'Floor Manager',
+      id: 'Manager@10',
+      icon: ShieldCheck,
+      color: '#3b82f6',
+      bg: 'rgba(59,130,246,0.12)',
+      scope: 'Operations: Tables, Live Orders, Menu & Staff Reports'
+    },
+    {
+      key: 'cashier@10',
+      role: 'CASHIER',
+      title: 'Cashier (Billing)',
+      id: 'Cashier@10',
+      icon: Receipt,
+      color: '#10b981',
+      bg: 'rgba(16,185,129,0.12)',
+      scope: 'Billing POS: Invoicing, Drawer Float, Z-Report & Orders'
+    },
+    {
+      key: 'kitchen@10',
+      role: 'KITCHEN',
+      title: 'Kitchen Chef',
+      id: 'Kitchen@10',
+      icon: ChefHat,
+      color: '#f97316',
+      bg: 'rgba(249,115,22,0.12)',
+      scope: 'Kitchen KDS: Real-time Cooking Queue & Order Tickets'
+    }
   ];
 
-  const handleSelectQuickRole = (r) => {
-    setRole(r.role);
-    setEmail(r.email);
-    setPassword('admin123');
+  const handleSelectPreset = (preset) => {
+    setSelectedRoleKey(preset.key);
+    setUsername(preset.id);
+    setPassword(preset.id);
     setError('');
   };
 
-  const handleInitialSubmit = async (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
-    if (!email) {
-      setError('Please provide your work email address');
+    if (!username.trim()) {
+      setError('Please enter your Staff ID');
       return;
     }
+    if (!password) {
+      setError('Please enter your password');
+      return;
+    }
+
     setError('');
     setLoading(true);
 
     try {
-      // Simulate production 2FA / Email verification OTP step
-      const code = Math.floor(100000 + Math.random() * 900000).toString();
-      setGeneratedCode(code);
-      setVerificationCode(code); // Pre-filled for convenience in development/demo
-      setShowVerificationStep(true);
+      const loggedUser = await login(username.trim(), password.trim());
+      const destination = location.state?.from || getRoleHomePath(loggedUser.role);
+      navigate(destination, { replace: true });
     } catch (err) {
-      setError(err.message || 'Login failed. Please check your credentials.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleVerifyAndLogin = async (e) => {
-    e.preventDefault();
-    if (verificationCode !== generatedCode && verificationCode !== '123456') {
-      setError('Invalid 6-digit verification code. Please check and re-enter.');
-      return;
-    }
-
-    setLoading(true);
-    setError('');
-
-    try {
-      const res = await api.staffLogin({
-        email,
-        password: password || 'admin123',
-        role
-      });
-      if (loginWithCredentials) {
-        loginWithCredentials(res.user);
-      } else {
-        localStorage.setItem('cafe_staff_user', JSON.stringify(res.user));
-      }
-
-      const redirectPath = location.state?.from || (role === 'KITCHEN' ? '/admin/kitchen' : role === 'CASHIER' ? '/admin/billing' : '/admin');
-      navigate(redirectPath);
-    } catch (err) {
-      setError(err.message || 'Authentication failed. Please verify credentials.');
+      setError(err.message || 'Login failed. Please verify your ID and password.');
     } finally {
       setLoading(false);
     }
@@ -100,216 +110,271 @@ export default function LoginPage() {
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      background: 'radial-gradient(circle at 50% 20%, rgba(212,163,115,0.15) 0%, #fcfbf9 70%)',
-      padding: '24px 16px'
+      background: 'radial-gradient(circle at 50% 10%, rgba(212,175,55,0.12) 0%, #0d0a08 75%)',
+      padding: '32px 16px',
+      color: 'var(--text-primary)'
     }}>
-      <div style={{ maxWidth: 460, width: '100%' }}>
-        {/* Top Branding */}
-        <div style={{ textAlign: 'center', marginBottom: 24 }}>
+      <div style={{ maxWidth: 520, width: '100%' }}>
+        {/* Top Cafe Branding */}
+        <div style={{ textAlign: 'center', marginBottom: 28 }}>
           <div style={{
-            width: 54,
-            height: 54,
-            borderRadius: 16,
-            background: 'linear-gradient(135deg, #d4a373 0%, #8c5d33 100%)',
+            width: 60,
+            height: 60,
+            borderRadius: 18,
+            background: 'linear-gradient(135deg, #d4af37 0%, #8c5d33 100%)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            color: '#fff',
-            margin: '0 auto 12px',
-            boxShadow: '0 8px 24px rgba(212,163,115,0.35)'
+            color: '#0e0a07',
+            margin: '0 auto 14px',
+            boxShadow: '0 8px 30px rgba(212,175,55,0.35)'
           }}>
-            <ShieldCheck size={28} />
+            <UtensilsCrossed size={30} strokeWidth={2.3} />
           </div>
-          <h1 style={{ fontSize: '1.6rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-            {cafeInfo?.name || 'The Velvet Bean & Bistro'}
+
+          <h1 style={{
+            fontSize: '1.75rem',
+            fontWeight: 800,
+            fontFamily: 'var(--font-heading)',
+            color: 'var(--text-primary)',
+            letterSpacing: '-0.02em'
+          }}>
+            {cafeInfo?.name || 'Musafirr Cafe & Bistro'}
           </h1>
-          <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: 4 }}>
-            Role-Based Authentication & Verification Portal
+          <p style={{ fontSize: '0.85rem', color: 'var(--accent-gold)', marginTop: 4, fontWeight: 700, letterSpacing: '0.04em' }}>
+            STAFF & TERMINAL ACCESS PORTAL
+          </p>
+          <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 2 }}>
+            Enter your designated Staff ID and Password to unlock role-specific terminal views.
           </p>
         </div>
 
-        {/* Card */}
-        <div className="glass-panel" style={{ padding: '32px 28px' }}>
+        {/* Main Card */}
+        <div className="glass-panel" style={{
+          padding: '32px 28px',
+          border: '1px solid var(--border-medium)',
+          boxShadow: '0 20px 50px rgba(0,0,0,0.6)',
+          backdropFilter: 'blur(16px)'
+        }}>
           {error && (
             <div style={{
-              background: '#fef2f2',
-              border: '1px solid #fecaca',
-              color: '#991b1b',
+              background: 'rgba(239,68,68,0.12)',
+              border: '1px solid rgba(239,68,68,0.3)',
+              color: '#ef4444',
               borderRadius: 'var(--radius-sm)',
               padding: '10px 14px',
               fontSize: '0.82rem',
               display: 'flex',
               alignItems: 'center',
-              gap: 8,
+              gap: 10,
               marginBottom: 20
             }}>
-              <AlertCircle size={16} />
+              <AlertCircle size={17} style={{ flexShrink: 0 }} />
               <span>{error}</span>
             </div>
           )}
 
-          {!showVerificationStep ? (
-            <form onSubmit={handleInitialSubmit}>
-              {/* Quick Role Selection Chips */}
-              <div style={{ marginBottom: 18 }}>
-                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
-                  Select Staff Role
-                </label>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
-                  {quickRoles.map(item => (
-                    <button
-                      key={item.role}
-                      type="button"
-                      onClick={() => handleSelectQuickRole(item)}
-                      style={{
-                        padding: '8px 10px',
-                        borderRadius: 'var(--radius-sm)',
-                        fontSize: '0.78rem',
-                        fontWeight: 700,
-                        border: role === item.role ? '1.5px solid var(--accent-gold)' : '1px solid var(--border-medium)',
-                        background: role === item.role ? 'var(--accent-gold-dim)' : 'var(--bg-surface-elevated)',
-                        color: role === item.role ? 'var(--accent-gold)' : 'var(--text-secondary)',
-                        cursor: 'pointer',
-                        textAlign: 'left'
-                      }}
-                    >
-                      {item.name}
-                    </button>
-                  ))}
-                </div>
-              </div>
+          {/* Quick-Pick Role Badges */}
+          <div style={{ marginBottom: 24 }}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: 10
+            }}>
+              <span style={{
+                fontSize: '0.72rem',
+                fontWeight: 800,
+                color: 'var(--text-muted)',
+                textTransform: 'uppercase',
+                letterSpacing: '0.06em'
+              }}>
+                Dedicated Roles & Fixed Credentials
+              </span>
+              <span style={{ fontSize: '0.72rem', color: 'var(--accent-gold)', fontWeight: 600 }}>
+                Click to Auto-Fill
+              </span>
+            </div>
 
-              {/* Email */}
-              <div style={{ marginBottom: 16 }}>
-                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 6 }}>
-                  Email Address / Username
-                </label>
-                <div style={{ position: 'relative' }}>
-                  <Mail size={16} color="var(--text-muted)" style={{ position: 'absolute', left: 12, top: 12 }} />
-                  <input
-                    type="email"
-                    required
-                    placeholder="e.g. staff@cafe.com"
-                    value={email}
-                    onChange={e => setEmail(e.target.value)}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(2, 1fr)',
+              gap: 10
+            }}>
+              {rolePresets.map(preset => {
+                const Icon = preset.icon;
+                const isSelected = selectedRoleKey === preset.key;
+                return (
+                  <button
+                    key={preset.key}
+                    type="button"
+                    onClick={() => handleSelectPreset(preset)}
                     style={{
-                      width: '100%',
-                      padding: '10px 12px 10px 38px',
+                      padding: '10px 12px',
                       borderRadius: 'var(--radius-sm)',
-                      background: 'var(--bg-surface-elevated)',
-                      border: '1px solid var(--border-medium)',
-                      color: 'var(--text-primary)',
-                      fontFamily: 'inherit',
-                      fontSize: '0.9rem'
+                      border: isSelected ? `1.5px solid ${preset.color}` : '1px solid var(--border-medium)',
+                      background: isSelected ? preset.bg : 'var(--bg-surface-elevated)',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      transition: 'all 0.15s ease',
+                      position: 'relative'
                     }}
-                  />
-                </div>
-              </div>
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                      <div style={{
+                        width: 22,
+                        height: 22,
+                        borderRadius: 6,
+                        background: preset.bg,
+                        color: preset.color,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}>
+                        <Icon size={13} />
+                      </div>
+                      <span style={{ fontSize: '0.82rem', fontWeight: 700, color: isSelected ? preset.color : 'var(--text-primary)' }}>
+                        {preset.title}
+                      </span>
+                    </div>
 
-              {/* Password */}
-              <div style={{ marginBottom: 22 }}>
-                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 6 }}>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontFamily: 'monospace' }}>
+                      ID: <strong>{preset.id}</strong>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Login Form */}
+          <form onSubmit={handleLogin}>
+            {/* Staff ID */}
+            <div style={{ marginBottom: 16 }}>
+              <label style={{
+                display: 'block',
+                fontSize: '0.8rem',
+                fontWeight: 700,
+                color: 'var(--text-secondary)',
+                marginBottom: 6
+              }}>
+                Staff ID / Username
+              </label>
+              <div style={{ position: 'relative' }}>
+                <User size={16} color="var(--text-muted)" style={{ position: 'absolute', left: 12, top: 12 }} />
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Owner@10, Cashier@10"
+                  value={username}
+                  onChange={e => {
+                    setUsername(e.target.value);
+                    setSelectedRoleKey(null);
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px 10px 38px',
+                    borderRadius: 'var(--radius-sm)',
+                    background: 'var(--bg-surface-elevated)',
+                    border: '1px solid var(--border-medium)',
+                    color: 'var(--text-primary)',
+                    fontFamily: 'inherit',
+                    fontSize: '0.92rem'
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* Password */}
+            <div style={{ marginBottom: 24 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                <label style={{
+                  fontSize: '0.8rem',
+                  fontWeight: 700,
+                  color: 'var(--text-secondary)'
+                }}>
                   Password
                 </label>
-                <div style={{ position: 'relative' }}>
-                  <Lock size={16} color="var(--text-muted)" style={{ position: 'absolute', left: 12, top: 12 }} />
-                  <input
-                    type="password"
-                    required
-                    placeholder="Enter account password"
-                    value={password}
-                    onChange={e => setPassword(e.target.value)}
-                    style={{
-                      width: '100%',
-                      padding: '10px 12px 10px 38px',
-                      borderRadius: 'var(--radius-sm)',
-                      background: 'var(--bg-surface-elevated)',
-                      border: '1px solid var(--border-medium)',
-                      color: 'var(--text-primary)',
-                      fontFamily: 'inherit',
-                      fontSize: '0.9rem'
-                    }}
-                  />
-                </div>
+                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                  Same as ID (e.g. <code>Owner@10</code>)
+                </span>
               </div>
-
-              <button
-                type="submit"
-                disabled={loading}
-                className="btn btn-primary"
-                style={{ width: '100%', padding: '12px', fontSize: '0.95rem' }}
-              >
-                <span>Continue to Verification</span>
-                <ArrowRight size={16} />
-              </button>
-            </form>
-          ) : (
-            <form onSubmit={handleVerifyAndLogin}>
-              <div style={{
-                background: '#eff6ff',
-                border: '1px solid #bfdbfe',
-                padding: '12px 14px',
-                borderRadius: 'var(--radius-sm)',
-                marginBottom: 20
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#1e40af', fontSize: '0.82rem', fontWeight: 700, marginBottom: 4 }}>
-                  <Sparkles size={16} />
-                  <span>Email Verification OTP Sent!</span>
-                </div>
-                <p style={{ fontSize: '0.78rem', color: '#1e3a8a', lineHeight: 1.4 }}>
-                  A secure 6-digit one-time code was sent to <strong>{email}</strong>. For instant demo access, code is pre-filled: <code>{generatedCode}</code>.
-                </p>
-              </div>
-
-              <div style={{ marginBottom: 22 }}>
-                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 6 }}>
-                  Enter 6-Digit Code
-                </label>
-                <div style={{ position: 'relative' }}>
-                  <KeyRound size={16} color="var(--text-muted)" style={{ position: 'absolute', left: 12, top: 12 }} />
-                  <input
-                    type="text"
-                    maxLength={6}
-                    required
-                    value={verificationCode}
-                    onChange={e => setVerificationCode(e.target.value)}
-                    style={{
-                      width: '100%',
-                      padding: '10px 12px 10px 38px',
-                      letterSpacing: '0.3em',
-                      fontWeight: 800,
-                      fontSize: '1.1rem',
-                      borderRadius: 'var(--radius-sm)',
-                      background: 'var(--bg-surface-elevated)',
-                      border: '1px solid var(--border-medium)',
-                      color: 'var(--text-primary)',
-                      fontFamily: 'monospace'
-                    }}
-                  />
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', gap: 10 }}>
+              <div style={{ position: 'relative' }}>
+                <Lock size={16} color="var(--text-muted)" style={{ position: 'absolute', left: 12, top: 12 }} />
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  required
+                  placeholder="Enter role password"
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '10px 38px 10px 38px',
+                    borderRadius: 'var(--radius-sm)',
+                    background: 'var(--bg-surface-elevated)',
+                    border: '1px solid var(--border-medium)',
+                    color: 'var(--text-primary)',
+                    fontFamily: 'inherit',
+                    fontSize: '0.92rem'
+                  }}
+                />
                 <button
                   type="button"
-                  onClick={() => setShowVerificationStep(false)}
-                  className="btn btn-secondary"
-                  style={{ flex: 1, padding: '10px' }}
+                  onClick={() => setShowPassword(!showPassword)}
+                  style={{
+                    position: 'absolute',
+                    right: 12,
+                    top: 11,
+                    background: 'transparent',
+                    border: 'none',
+                    color: 'var(--text-muted)',
+                    cursor: 'pointer',
+                    padding: 0
+                  }}
                 >
-                  Back
-                </button>
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="btn btn-primary"
-                  style={{ flex: 2, padding: '10px' }}
-                >
-                  <CheckCircle2 size={16} />
-                  <span>{loading ? 'Verifying...' : 'Verify & Enter'}</span>
+                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
               </div>
-            </form>
-          )}
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="btn btn-primary"
+              style={{
+                width: '100%',
+                padding: '12px',
+                fontSize: '0.95rem',
+                fontWeight: 700,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8
+              }}
+            >
+              <span>{loading ? 'Authenticating...' : 'Sign In to Terminal'}</span>
+              <ArrowRight size={16} />
+            </button>
+          </form>
+
+          {/* Access Matrix Summary */}
+          <div style={{
+            marginTop: 24,
+            paddingTop: 18,
+            borderTop: '1px solid var(--border-subtle)',
+            fontSize: '0.74rem',
+            color: 'var(--text-muted)',
+            lineHeight: 1.5
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--accent-gold)', fontWeight: 700, marginBottom: 4 }}>
+              <Sparkles size={13} />
+              <span>Strict Role-Based Access Control (RBAC):</span>
+            </div>
+            <div>• <strong>Cashier:</strong> Dedicated exclusively to POS Billing & Invoicing</div>
+            <div>• <strong>Kitchen:</strong> Dedicated exclusively to Kitchen Display System (KDS)</div>
+            <div>• <strong>Manager:</strong> Operational floor management & menu control</div>
+            <div>• <strong>Owner:</strong> Full administrative privileges, financial audit & settings</div>
+          </div>
         </div>
       </div>
     </div>

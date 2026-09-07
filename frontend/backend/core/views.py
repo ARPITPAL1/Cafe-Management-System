@@ -38,42 +38,65 @@ def cafe_profile_view(request):
 @api_view(['POST'])
 def staff_login_view(request):
     """
-    Staff login: Supports email or username + password authentication with role enforcement.
+    Dedicated Staff Authentication with fixed credentials & role enforcement:
+    Owner: Owner@10 / Owner@10 (Superuser, Full Access)
+    Manager: Manager@10 / Manager@10 (Manager Access)
+    Cashier: Cashier@10 / Cashier@10 (Billing & Orders Only)
+    Kitchen: Kitchen@10 / Kitchen@10 (KDS & Orders Only)
     """
-    identifier = request.data.get('email') or request.data.get('username') or ''
-    password = request.data.get('password') or ''
-    role_override = request.data.get('role')
+    identifier = (request.data.get('username') or request.data.get('email') or '').strip()
+    password = (request.data.get('password') or '').strip()
 
     if not identifier:
-        return Response({'error': 'Email or Username is required'}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'error': 'Staff ID or Username is required.'}, status=status.HTTP_400_BAD_REQUEST)
+    if not password:
+        return Response({'error': 'Password is required.'}, status=status.HTTP_400_BAD_REQUEST)
 
-    # Search user by email or username
-    user = User.objects.filter(email__iexact=identifier).first() or User.objects.filter(username__iexact=identifier).first()
-    
-    if not user:
-        # If user doesn't exist yet, create staff user
-        username = identifier.split('@')[0].lower()
-        user = User.objects.create_user(
-            username=username,
-            first_name=username.capitalize(),
-            email=identifier if '@' in identifier else f"{username}@cafe.local"
-        )
-        if password:
-            user.set_password(password)
+    # Standard fixed credentials mapping
+    standard_accounts = {
+        'owner@10': {'username': 'Owner@10', 'role': 'OWNER', 'name': 'Owner / Admin', 'is_superuser': True},
+        'manager@10': {'username': 'Manager@10', 'role': 'MANAGER', 'name': 'Floor Manager', 'is_superuser': False},
+        'cashier@10': {'username': 'Cashier@10', 'role': 'CASHIER', 'name': 'Billing Cashier', 'is_superuser': False},
+        'kitchen@10': {'username': 'Kitchen@10', 'role': 'KITCHEN', 'name': 'Kitchen Chef', 'is_superuser': False},
+    }
+
+    # Case-insensitive user lookup
+    user = User.objects.filter(username__iexact=identifier).first() or User.objects.filter(email__iexact=identifier).first()
+
+    clean_id = identifier.lower()
+    if clean_id in standard_accounts:
+        spec = standard_accounts[clean_id]
+        # Password must match the standard password or user password
+        if password != spec['username'] and (user is None or not user.check_password(password)):
+            return Response({'error': f"Incorrect password for ID '{spec['username']}'. Password is case-sensitive."}, status=status.HTTP_401_UNAUTHORIZED)
+        
+        if not user:
+            user = User.objects.create_user(
+                username=spec['username'],
+                email=f"{clean_id.split('@')[0]}@cafe.local",
+                first_name=spec['name'],
+                is_superuser=spec['is_superuser'],
+                is_staff=True
+            )
+            user.set_password(spec['username'])
             user.save()
-    elif password:
-        # Check password if provided and user has a usable password
-        if user.has_usable_password() and not user.check_password(password) and password != 'admin123':
-            return Response({'error': 'Incorrect password. Please verify and try again.'}, status=status.HTTP_401_UNAUTHORIZED)
+        else:
+            if spec['is_superuser'] and not user.is_superuser:
+                user.is_superuser = True
+                user.is_staff = True
+                user.save()
 
-    # Ensure staff profile exists
-    profile, created = StaffProfile.objects.get_or_create(
-        user=user,
-        defaults={'role': role_override or 'OWNER'}
-    )
-    if role_override and profile.role != role_override:
-        profile.role = role_override
+        profile, _ = StaffProfile.objects.get_or_create(user=user)
+        profile.role = spec['role']
         profile.save()
+    else:
+        if not user:
+            return Response({'error': f"Staff ID '{identifier}' not recognized. Please use a valid Staff ID."}, status=status.HTTP_401_UNAUTHORIZED)
+        
+        if user.has_usable_password() and not user.check_password(password) and password != 'admin123':
+            return Response({'error': 'Incorrect password. Please try again.'}, status=status.HTTP_401_UNAUTHORIZED)
+        
+        profile, _ = StaffProfile.objects.get_or_create(user=user, defaults={'role': 'CASHIER'})
 
     AuditLog.objects.create(
         user_name=user.get_full_name() or user.username,
@@ -81,7 +104,7 @@ def staff_login_view(request):
         action='Staff Logged In',
         entity_type='Auth',
         entity_id=str(user.id),
-        details=f"Authenticated as {profile.get_role_display()} ({user.email})"
+        details=f"Authenticated as {profile.get_role_display()} ({user.username})"
     )
 
     return Response({
@@ -89,10 +112,11 @@ def staff_login_view(request):
         'user': {
             'id': user.id,
             'username': user.username,
-            'name': user.get_full_name() or user.username.capitalize(),
+            'name': user.get_full_name() or user.username,
             'email': user.email,
             'role': profile.role,
             'role_display': profile.get_role_display(),
+            'is_superuser': user.is_superuser
         }
     })
 

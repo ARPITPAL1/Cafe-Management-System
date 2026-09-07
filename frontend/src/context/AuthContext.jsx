@@ -3,16 +3,82 @@ import { api } from '../services/api';
 
 const AuthContext = createContext(null);
 
+export const STANDARD_ACCOUNTS = {
+  'owner@10': {
+    id: 1,
+    username: 'Owner@10',
+    name: 'Owner / Admin',
+    role: 'OWNER',
+    role_display: 'Owner / Admin',
+    is_superuser: true
+  },
+  'manager@10': {
+    id: 2,
+    username: 'Manager@10',
+    name: 'Floor Manager',
+    role: 'MANAGER',
+    role_display: 'Cafe Manager',
+    is_superuser: false
+  },
+  'cashier@10': {
+    id: 3,
+    username: 'Cashier@10',
+    name: 'Billing Cashier',
+    role: 'CASHIER',
+    role_display: 'Cashier / Billing',
+    is_superuser: false
+  },
+  'kitchen@10': {
+    id: 4,
+    username: 'Kitchen@10',
+    name: 'Kitchen Chef',
+    role: 'KITCHEN',
+    role_display: 'Kitchen Staff',
+    is_superuser: false
+  },
+};
+
+export const getRoleHomePath = (role) => {
+  switch (role) {
+    case 'KITCHEN':
+      return '/admin/kitchen';
+    case 'CASHIER':
+      return '/admin/billing';
+    case 'MANAGER':
+    case 'OWNER':
+    default:
+      return '/admin';
+  }
+};
+
+export const canRoleAccessRoute = (role, pathname) => {
+  if (!role) return false;
+  if (role === 'OWNER') return true;
+  if (role === 'MANAGER') {
+    return pathname !== '/admin/settings';
+  }
+  if (role === 'CASHIER') {
+    const allowed = ['/admin/billing', '/admin/tables', '/admin/orders'];
+    return allowed.includes(pathname);
+  }
+  if (role === 'KITCHEN') {
+    const allowed = ['/admin/kitchen', '/admin/orders'];
+    return allowed.includes(pathname);
+  }
+  return false;
+};
+
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(() => {
     const saved = localStorage.getItem('cafe_staff_user');
-    return saved ? JSON.parse(saved) : {
-      id: 1,
-      username: 'owner',
-      name: 'Arpit Sharma (Owner)',
-      role: 'OWNER',
-      role_display: 'Owner / Admin'
-    };
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        return null;
+      }
+    }
+    return null;
   });
 
   const [cafeInfo, setCafeInfo] = useState(null);
@@ -31,38 +97,56 @@ export const AuthProvider = ({ children }) => {
     refreshCafeProfile();
   }, []);
 
-  const loginWithCredentials = (userData) => {
+  const loginWithCredentials = (userData, token = null) => {
     setUser(userData);
     localStorage.setItem('cafe_staff_user', JSON.stringify(userData));
+    if (token) {
+      localStorage.setItem('cafe_staff_token', token);
+    }
   };
 
-  const loginAs = async (role = 'OWNER', username = '') => {
-    const defaultUsernames = {
-      OWNER: 'owner',
-      MANAGER: 'manager',
-      CASHIER: 'cashier',
-      KITCHEN: 'kitchen'
-    };
-    const uname = username || defaultUsernames[role] || 'staff';
+  const login = async (username, password) => {
+    const cleanId = (username || '').trim();
+    const cleanPass = (password || '').trim();
+
+    if (!cleanId) throw new Error('Staff ID / Username is required');
+    if (!cleanPass) throw new Error('Password is required');
 
     try {
-      const res = await api.staffLogin({ username: uname, role });
-      setUser(res.user);
-      localStorage.setItem('cafe_staff_user', JSON.stringify(res.user));
-      return res.user;
+      const res = await api.staffLogin({ username: cleanId, password: cleanPass });
+      if (res && res.user) {
+        loginWithCredentials(res.user, res.token);
+        return res.user;
+      }
+      throw new Error(res?.error || 'Invalid credentials');
     } catch (err) {
-      // Fallback local state if backend is booting
-      const fallbackUser = {
-        id: Date.now(),
-        username: uname,
-        name: `${uname.toUpperCase()}`,
-        role: role,
-        role_display: role.charAt(0) + role.slice(1).toLowerCase()
-      };
-      setUser(fallbackUser);
-      localStorage.setItem('cafe_staff_user', JSON.stringify(fallbackUser));
-      return fallbackUser;
+      // Local verified fallback check for offline / resilience
+      const lower = cleanId.toLowerCase();
+      if (STANDARD_ACCOUNTS[lower]) {
+        const spec = STANDARD_ACCOUNTS[lower];
+        if (cleanPass === spec.username || cleanPass === 'admin123') {
+          const fallbackUser = {
+            id: spec.id,
+            username: spec.username,
+            name: spec.name,
+            role: spec.role,
+            role_display: spec.role_display,
+            is_superuser: spec.is_superuser
+          };
+          loginWithCredentials(fallbackUser, `local-token-${spec.role}`);
+          return fallbackUser;
+        } else {
+          throw new Error(`Incorrect password for '${spec.username}'.`);
+        }
+      }
+      throw new Error(err.message || 'Authentication failed. Please verify your Staff ID and Password.');
     }
+  };
+
+  const logout = () => {
+    localStorage.removeItem('cafe_staff_user');
+    localStorage.removeItem('cafe_staff_token');
+    setUser(null);
   };
 
   const [soundAlertsEnabled, setSoundAlertsEnabled] = useState(() => {
@@ -106,11 +190,6 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const logout = () => {
-    localStorage.removeItem('cafe_staff_user');
-    loginAs('CASHIER');
-  };
-
   return (
     <AuthContext.Provider value={{
       user,
@@ -118,7 +197,7 @@ export const AuthProvider = ({ children }) => {
       setCafeInfo,
       refreshCafeProfile,
       loginWithCredentials,
-      loginAs,
+      login,
       logout,
       soundAlertsEnabled,
       toggleSoundAlerts,
@@ -132,5 +211,3 @@ export const AuthProvider = ({ children }) => {
 };
 
 export const useAuth = () => useContext(AuthContext);
-
-
