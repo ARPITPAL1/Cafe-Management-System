@@ -14,8 +14,6 @@ import MenuManagement from './pages/management/MenuManagement';
 import ReportsAnalytics from './pages/management/ReportsAnalytics';
 import CustomerDirectory from './pages/management/CustomerDirectory';
 import CafeSettings from './pages/management/CafeSettings';
-import DeveloperPortal from './pages/management/DeveloperPortal';
-
 // Auth & Setup
 import LoginPage from './pages/auth/LoginPage';
 
@@ -40,9 +38,6 @@ export default function App() {
       <CartProvider>
         <BrowserRouter>
           <Routes>
-            {/* Developer Superadmin Portal (Dynamic Cafe Provisioning) */}
-            <Route path="/dev-setup" element={<DeveloperPortal />} />
-
             {/* Role Authentication & Verification */}
             <Route path="/login" element={<LoginPage />} />
 
@@ -64,7 +59,6 @@ export default function App() {
               <Route path="reports" element={<ReportsAnalytics />} />
               <Route path="customers" element={<CustomerDirectory />} />
               <Route path="settings" element={<CafeSettings />} />
-              <Route path="dev-setup" element={<DeveloperPortal />} />
             </Route>
 
             {/* Fallback to Management Dashboard */}

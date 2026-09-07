@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate, useLocation, Link } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
 import {
@@ -10,8 +10,7 @@ import {
   Sparkles,
   KeyRound,
   CheckCircle2,
-  AlertCircle,
-  Code
+  AlertCircle
 } from 'lucide-react';
 
 export default function LoginPage() {
@@ -311,25 +310,6 @@ export default function LoginPage() {
               </div>
             </form>
           )}
-
-          {/* Developer Link Footer */}
-          <div style={{ borderTop: '1px solid var(--border-subtle)', marginTop: 24, paddingTop: 16, textAlign: 'center' }}>
-            <Link
-              to="/dev-setup"
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                fontSize: '0.78rem',
-                color: 'var(--accent-gold)',
-                textDecoration: 'none',
-                fontWeight: 700
-              }}
-            >
-              <Code size={14} />
-              <span>Developer Provisioning Portal (/dev-setup)</span>
-            </Link>
-          </div>
         </div>
       </div>
     </div>
