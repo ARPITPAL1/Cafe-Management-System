@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { useAuth, getRoleHomePath, STANDARD_ACCOUNTS } from '../../context/AuthContext';
+import { useAuth, getRoleHomePath } from '../../context/AuthContext';
 import {
   ShieldCheck,
   Lock,
@@ -14,7 +14,6 @@ import {
   Receipt,
   ChefHat,
   LayoutDashboard,
-  CheckCircle2
 } from 'lucide-react';
 
 export default function LoginPage() {
@@ -29,55 +28,40 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [selectedRoleKey, setSelectedRoleKey] = useState(null);
 
-  const rolePresets = [
+  const roleCards = [
     {
-      key: 'owner@10',
-      role: 'OWNER',
+      key: 'owner',
       title: 'Owner / Admin',
-      id: 'Owner@10',
       icon: LayoutDashboard,
       color: '#d4af37',
       bg: 'rgba(212,175,55,0.12)',
       scope: 'Full Control: Settings, Menu BOM, Financials, Shifts & Reports'
     },
     {
-      key: 'manager@10',
-      role: 'MANAGER',
+      key: 'manager',
       title: 'Floor Manager',
-      id: 'Manager@10',
       icon: ShieldCheck,
       color: '#3b82f6',
       bg: 'rgba(59,130,246,0.12)',
       scope: 'Operations: Tables, Live Orders, Menu & Staff Reports'
     },
     {
-      key: 'cashier@10',
-      role: 'CASHIER',
+      key: 'cashier',
       title: 'Cashier (Billing)',
-      id: 'Cashier@10',
       icon: Receipt,
       color: '#10b981',
       bg: 'rgba(16,185,129,0.12)',
       scope: 'Billing POS: Invoicing, Drawer Float, Z-Report & Orders'
     },
     {
-      key: 'kitchen@10',
-      role: 'KITCHEN',
+      key: 'kitchen',
       title: 'Kitchen Chef',
-      id: 'Kitchen@10',
       icon: ChefHat,
       color: '#f97316',
       bg: 'rgba(249,115,22,0.12)',
       scope: 'Kitchen KDS: Real-time Cooking Queue & Order Tickets'
     }
   ];
-
-  const handleSelectPreset = (preset) => {
-    setSelectedRoleKey(preset.key);
-    setUsername(preset.id);
-    setPassword(preset.id);
-    setError('');
-  };
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -174,46 +158,41 @@ export default function LoginPage() {
             </div>
           )}
 
-          {/* Quick-Pick Role Badges */}
+          {/* Role Cards */}
           <div style={{ marginBottom: 24 }}>
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
+            <span style={{
+              display: 'block',
+              fontSize: '0.72rem',
+              fontWeight: 800,
+              color: 'var(--text-muted)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.06em',
               marginBottom: 10
             }}>
-              <span style={{
-                fontSize: '0.72rem',
-                fontWeight: 800,
-                color: 'var(--text-muted)',
-                textTransform: 'uppercase',
-                letterSpacing: '0.06em'
-              }}>
-                Dedicated Roles & Fixed Credentials
-              </span>
-              <span style={{ fontSize: '0.72rem', color: 'var(--accent-gold)', fontWeight: 600 }}>
-                Click to Auto-Fill
-              </span>
-            </div>
+              Select Your Role
+            </span>
 
             <div style={{
               display: 'grid',
               gridTemplateColumns: 'repeat(2, 1fr)',
               gap: 10
             }}>
-              {rolePresets.map(preset => {
-                const Icon = preset.icon;
-                const isSelected = selectedRoleKey === preset.key;
+              {roleCards.map(card => {
+                const Icon = card.icon;
+                const isSelected = selectedRoleKey === card.key;
                 return (
                   <button
-                    key={preset.key}
+                    key={card.key}
                     type="button"
-                    onClick={() => handleSelectPreset(preset)}
+                    onClick={() => {
+                      setSelectedRoleKey(card.key);
+                      setError('');
+                    }}
                     style={{
                       padding: '10px 12px',
                       borderRadius: 'var(--radius-sm)',
-                      border: isSelected ? `1.5px solid ${preset.color}` : '1px solid var(--border-medium)',
-                      background: isSelected ? preset.bg : 'var(--bg-surface-elevated)',
+                      border: isSelected ? `1.5px solid ${card.color}` : '1px solid var(--border-medium)',
+                      background: isSelected ? card.bg : 'var(--bg-surface-elevated)',
                       cursor: 'pointer',
                       textAlign: 'left',
                       transition: 'all 0.15s ease',
@@ -225,21 +204,21 @@ export default function LoginPage() {
                         width: 22,
                         height: 22,
                         borderRadius: 6,
-                        background: preset.bg,
-                        color: preset.color,
+                        background: card.bg,
+                        color: card.color,
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center'
                       }}>
                         <Icon size={13} />
                       </div>
-                      <span style={{ fontSize: '0.82rem', fontWeight: 700, color: isSelected ? preset.color : 'var(--text-primary)' }}>
-                        {preset.title}
+                      <span style={{ fontSize: '0.82rem', fontWeight: 700, color: isSelected ? card.color : 'var(--text-primary)' }}>
+                        {card.title}
                       </span>
                     </div>
 
-                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontFamily: 'monospace' }}>
-                      ID: <strong>{preset.id}</strong>
+                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', lineHeight: 1.4 }}>
+                      {card.scope}
                     </div>
                   </button>
                 );
@@ -265,7 +244,7 @@ export default function LoginPage() {
                 <input
                   type="text"
                   required
-                  placeholder="Owner@10, Cashier@10"
+                  placeholder="Enter Staff ID / Username"
                   value={username}
                   onChange={e => {
                     setUsername(e.target.value);
@@ -287,24 +266,21 @@ export default function LoginPage() {
 
             {/* Password */}
             <div style={{ marginBottom: 24 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                <label style={{
-                  fontSize: '0.8rem',
-                  fontWeight: 700,
-                  color: 'var(--text-secondary)'
-                }}>
-                  Password
-                </label>
-                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                  Same as ID (<code>Owner@10</code>)
-                </span>
-              </div>
+              <label style={{
+                display: 'block',
+                fontSize: '0.8rem',
+                fontWeight: 700,
+                color: 'var(--text-secondary)',
+                marginBottom: 6
+              }}>
+                Password
+              </label>
               <div style={{ position: 'relative' }}>
                 <Lock size={16} color="var(--text-muted)" style={{ position: 'absolute', left: 12, top: 12 }} />
                 <input
                   type={showPassword ? 'text' : 'password'}
                   required
-                  placeholder="Enter role password"
+                  placeholder="Enter Password"
                   value={password}
                   onChange={e => setPassword(e.target.value)}
                   style={{
