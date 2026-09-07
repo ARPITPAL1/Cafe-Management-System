@@ -1,0 +1,43 @@
+from django.urls import path
+from .views import (
+    table_list_create_view,
+    table_detail_view,
+    table_regenerate_token_view,
+    table_update_status_view,
+    table_open_session_view,
+    table_close_session_view,
+    session_close_direct_view,
+    table_by_token_view,
+    call_waiter_view,
+    dismiss_waiter_view,
+    dismiss_all_waiter_calls_view,
+    request_essentials_view,
+    reservation_list_create_view,
+    reservation_detail_update_view,
+    dismiss_all_reservation_alerts_view,
+    check_in_reservation_view,
+    toggle_advance_booking_view,
+    toggle_waiter_alerts_view,
+)
+
+urlpatterns = [
+    path('', table_list_create_view, name='table_list_create'),
+    path('<int:pk>/', table_detail_view, name='table_detail'),
+    path('<int:pk>/regenerate-token/', table_regenerate_token_view, name='table_regenerate_token'),
+    path('<int:pk>/update-status/', table_update_status_view, name='table_update_status'),
+    path('<int:pk>/open-session/', table_open_session_view, name='table_open_session'),
+    path('<int:pk>/close-session/', table_close_session_view, name='table_close_session'),
+    path('<int:pk>/dismiss-waiter/', dismiss_waiter_view, name='table_dismiss_waiter'),
+    path('dismiss-all-waiters/', dismiss_all_waiter_calls_view, name='tables_dismiss_all_waiters'),
+    path('sessions/<int:session_id>/close/', session_close_direct_view, name='session_close_direct'),
+    path('by-token/<str:token>/', table_by_token_view, name='table_by_token'),
+    path('by-token/<str:token>/call-waiter/', call_waiter_view, name='table_call_waiter'),
+    path('by-token/<str:token>/request-essentials/', request_essentials_view, name='table_request_essentials'),
+    path('reservations/', reservation_list_create_view, name='table_reservations'),
+    path('reservations/check-in/', check_in_reservation_view, name='table_reservations_check_in'),
+    path('reservations/dismiss-all-alerts/', dismiss_all_reservation_alerts_view, name='table_reservations_dismiss_all'),
+    path('reservations/<int:pk>/', reservation_detail_update_view, name='table_reservation_detail'),
+    path('toggle-advance-booking/', toggle_advance_booking_view, name='toggle_advance_booking'),
+    path('toggle-waiter-alerts/', toggle_waiter_alerts_view, name='toggle_waiter_alerts'),
+]
+
