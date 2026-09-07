@@ -162,12 +162,6 @@ export default function ThermalReceiptModal({ bill, cafeInfo, onClose, onCloseSe
                   <span>₹{parseFloat(bill.service_charge).toFixed(2)}</span>
                 </div>
               )}
-              {parseFloat(bill.tip_amount || 0) > 0 && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', color: '#15803d' }}>
-                  <span>Staff Tip / Gratuity:</span>
-                  <span>+₹{parseFloat(bill.tip_amount).toFixed(2)}</span>
-                </div>
-              )}
               {bill.coupon_code && (
                 <div style={{ display: 'flex', justifyContent: 'space-between', color: '#b45309', fontSize: '10px' }}>
                   <span>Coupon Applied:</span>

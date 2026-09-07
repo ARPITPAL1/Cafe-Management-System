@@ -23,7 +23,6 @@ import {
   DollarSign,
   Wallet,
   Tag,
-  HeartHandshake,
   ShieldCheck,
   AlertTriangle,
   PlusCircle,
@@ -44,7 +43,6 @@ export default function BillingPOS() {
   const [discountAmount, setDiscountAmount] = useState(0);
   const [discountReason, setDiscountReason] = useState('');
   const [serviceCharge, setServiceCharge] = useState(0);
-  const [tipAmount, setTipAmount] = useState(0);
 
   // Coupons
   const [couponCode, setCouponCode] = useState('');
@@ -114,7 +112,6 @@ export default function BillingPOS() {
       if (preview.existing_bill) {
         setDiscountAmount(parseFloat(preview.existing_bill.discount_amount) || 0);
         setDiscountReason(preview.existing_bill.discount_reason || '');
-        setTipAmount(parseFloat(preview.existing_bill.tip_amount) || 0);
         setCouponCode(preview.existing_bill.coupon_code || '');
         setPaymentAmount(preview.existing_bill.amount_remaining || preview.existing_bill.grand_total);
       } else {
@@ -216,7 +213,7 @@ export default function BillingPOS() {
         discount_reason: discountReason,
         coupon_code: couponCode,
         service_charge: serviceCharge,
-        tip_amount: tipAmount,
+        tip_amount: 0,
         cashier_name: 'Sunil Mehta (Cashier)'
       });
       fetchBillData(selectedSessionId);
@@ -811,98 +808,50 @@ export default function BillingPOS() {
                 </div>
               </div>
 
-              {/* Promo Coupon & Staff Tip Gratuity Row */}
+              {/* Promo Coupon Box */}
               <div style={{
                 background: 'var(--bg-surface-elevated)',
                 padding: '16px',
                 borderRadius: 'var(--radius-sm)',
-                marginBottom: 20,
-                display: 'grid',
-                gridTemplateColumns: '1fr 1fr',
-                gap: 16
+                marginBottom: 20
               }}>
-                {/* Coupon Box */}
-                <div>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: 6 }}>
-                    <Tag size={13} color="var(--accent-gold)" />
-                    <span>Apply Promo Coupon</span>
-                  </label>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <input
-                      type="text"
-                      placeholder="e.g. WELCOME10, FLAT50"
-                      value={couponCode}
-                      onChange={e => setCouponCode(e.target.value.toUpperCase())}
-                      style={{
-                        flex: 1,
-                        padding: '8px 10px',
-                        borderRadius: 'var(--radius-sm)',
-                        background: 'var(--bg-main)',
-                        border: '1px solid var(--border-medium)',
-                        color: 'var(--text-primary)',
-                        fontFamily: 'monospace',
-                        fontWeight: 700,
-                        fontSize: '0.85rem'
-                      }}
-                    />
-                    <button
-                      type="button"
-                      onClick={handleApplyCoupon}
-                      disabled={couponLoading || !couponCode}
-                      className="btn btn-secondary btn-sm"
-                      style={{ padding: '8px 12px' }}
-                    >
-                      {couponLoading ? 'Checking...' : 'Apply'}
-                    </button>
-                  </div>
-                  {couponMessage && (
-                    <div style={{ fontSize: '0.74rem', marginTop: 4, color: couponMessage.includes('saved') ? 'var(--status-available)' : 'var(--status-occupied)' }}>
-                      {couponMessage}
-                    </div>
-                  )}
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: 6 }}>
+                  <Tag size={13} color="var(--accent-gold)" />
+                  <span>Apply Promo Coupon</span>
+                </label>
+                <div style={{ display: 'flex', gap: 8, maxWidth: 460 }}>
+                  <input
+                    type="text"
+                    placeholder="e.g. WELCOME10, FLAT50"
+                    value={couponCode}
+                    onChange={e => setCouponCode(e.target.value.toUpperCase())}
+                    style={{
+                      flex: 1,
+                      padding: '8px 10px',
+                      borderRadius: 'var(--radius-sm)',
+                      background: 'var(--bg-main)',
+                      border: '1px solid var(--border-medium)',
+                      color: 'var(--text-primary)',
+                      fontFamily: 'monospace',
+                      fontWeight: 700,
+                      fontSize: '0.85rem'
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleApplyCoupon}
+                    disabled={couponLoading || !couponCode}
+                    className="btn btn-secondary btn-sm"
+                    style={{ padding: '8px 14px' }}
+                  >
+                    {couponLoading ? 'Checking...' : 'Apply'}
+                  </button>
                 </div>
-
-                {/* Staff Tip Selector */}
-                <div>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: 6 }}>
-                    <HeartHandshake size={13} color="var(--accent-gold)" />
-                    <span>Staff Tip / Gratuity</span>
-                  </label>
-                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                    {[
-                      { label: 'None', val: 0 },
-                      { label: '₹20', val: 20 },
-                      { label: '₹50', val: 50 },
-                      { label: '₹100', val: 100 },
-                      { label: '10%', val: Math.round((billPreview?.subtotal || 0) * 0.1) }
-                    ].map(t => (
-                      <button
-                        key={t.label}
-                        type="button"
-                        onClick={() => {
-                          setTipAmount(t.val);
-                        }}
-                        style={{
-                          padding: '5px 10px',
-                          borderRadius: 'var(--radius-sm)',
-                          fontSize: '0.76rem',
-                          fontWeight: 700,
-                          border: tipAmount === t.val ? '1.5px solid var(--accent-gold)' : '1px solid var(--border-medium)',
-                          background: tipAmount === t.val ? 'var(--accent-gold-dim)' : 'var(--bg-main)',
-                          color: tipAmount === t.val ? 'var(--accent-gold)' : 'var(--text-secondary)',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        {t.label}
-                      </button>
-                    ))}
+                {couponMessage && (
+                  <div style={{ fontSize: '0.74rem', marginTop: 4, color: couponMessage.includes('saved') ? 'var(--status-available)' : 'var(--status-occupied)' }}>
+                    {couponMessage}
                   </div>
-                  {tipAmount > 0 && (
-                    <div style={{ fontSize: '0.74rem', marginTop: 4, color: 'var(--status-available)' }}>
-                      +₹{tipAmount} tip added for cafe staff
-                    </div>
-                  )}
-                </div>
+                )}
               </div>
 
               {/* Existing Payment Records List (Split tender history) */}
