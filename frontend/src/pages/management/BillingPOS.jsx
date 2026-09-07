@@ -3,6 +3,7 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import { api } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import ThermalReceiptModal from '../../components/ThermalReceiptModal';
+import ZReportModal from '../../components/ZReportModal';
 import {
   Receipt,
   CreditCard,
@@ -17,13 +18,22 @@ import {
   Split,
   Sparkles,
   Users,
-  Merge
+  Merge,
+  Clock,
+  DollarSign,
+  Wallet,
+  Tag,
+  HeartHandshake,
+  ShieldCheck,
+  AlertTriangle,
+  PlusCircle,
+  Check
 } from 'lucide-react';
 
 export default function BillingPOS() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { cafeInfo, requireAdminAuth } = useAuth();
+  const { cafeInfo } = useAuth();
 
   const [activeTables, setActiveTables] = useState([]);
   const [selectedSessionId, setSelectedSessionId] = useState(searchParams.get('session_id') || '');
@@ -34,6 +44,24 @@ export default function BillingPOS() {
   const [discountAmount, setDiscountAmount] = useState(0);
   const [discountReason, setDiscountReason] = useState('');
   const [serviceCharge, setServiceCharge] = useState(0);
+  const [tipAmount, setTipAmount] = useState(0);
+
+  // Coupons
+  const [couponCode, setCouponCode] = useState('');
+  const [couponLoading, setCouponLoading] = useState(false);
+  const [couponMessage, setCouponMessage] = useState('');
+
+  // Cashier Shifts & Z-Reports
+  const [shiftData, setShiftData] = useState(null);
+  const [showOpenShiftModal, setShowOpenShiftModal] = useState(false);
+  const [showPettyCashModal, setShowPettyCashModal] = useState(false);
+  const [showCloseShiftModal, setShowCloseShiftModal] = useState(false);
+  const [openingFloatInput, setOpeningFloatInput] = useState('2000');
+  const [pettyAmountInput, setPettyAmountInput] = useState('');
+  const [pettyReasonInput, setPettyReasonInput] = useState('');
+  const [countedCashInput, setCountedCashInput] = useState('');
+  const [shiftNotesInput, setShiftNotesInput] = useState('');
+  const [zReportData, setZReportData] = useState(null);
 
   // Payment inputs (Split payments)
   const [paymentMethod, setPaymentMethod] = useState('UPI');
@@ -49,6 +77,19 @@ export default function BillingPOS() {
   const [showGuestView, setShowGuestView] = useState(false);
   const [selectedGuest, setSelectedGuest] = useState(null);
   const [mergingBills, setMergingBills] = useState(false);
+
+  const fetchCurrentShift = async () => {
+    try {
+      const res = await api.getCurrentShift();
+      if (res.active) {
+        setShiftData(res.shift);
+      } else {
+        setShiftData(null);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   const fetchActiveTables = async () => {
     try {
@@ -73,6 +114,8 @@ export default function BillingPOS() {
       if (preview.existing_bill) {
         setDiscountAmount(parseFloat(preview.existing_bill.discount_amount) || 0);
         setDiscountReason(preview.existing_bill.discount_reason || '');
+        setTipAmount(parseFloat(preview.existing_bill.tip_amount) || 0);
+        setCouponCode(preview.existing_bill.coupon_code || '');
         setPaymentAmount(preview.existing_bill.amount_remaining || preview.existing_bill.grand_total);
       } else {
         setPaymentAmount(preview.estimated_grand_total);
@@ -86,6 +129,7 @@ export default function BillingPOS() {
 
   useEffect(() => {
     fetchActiveTables();
+    fetchCurrentShift();
   }, []);
 
   useEffect(() => {
@@ -94,22 +138,93 @@ export default function BillingPOS() {
     }
   }, [selectedSessionId]);
 
+  const handleApplyCoupon = async () => {
+    if (!couponCode.trim()) return;
+    setCouponLoading(true);
+    setCouponMessage('');
+    try {
+      const res = await api.validateCoupon(couponCode, billPreview?.subtotal || 0);
+      if (res.valid) {
+        setDiscountAmount(res.discount_amount);
+        setDiscountReason(`Coupon: ${res.code}`);
+        setCouponMessage(res.message);
+      }
+    } catch (err) {
+      setCouponMessage(err.message || 'Invalid coupon code');
+    } finally {
+      setCouponLoading(false);
+    }
+  };
+
+  const handleOpenShift = async (e) => {
+    e.preventDefault();
+    try {
+      await api.openShift({
+        opening_float: parseFloat(openingFloatInput) || 2000,
+        cashier_name: 'Sunil Mehta (Cashier)',
+        notes: shiftNotesInput
+      });
+      setShowOpenShiftModal(false);
+      fetchCurrentShift();
+      alert('Cashier Shift opened successfully! Starting float logged.');
+    } catch (err) {
+      alert('Error opening shift: ' + err.message);
+    }
+  };
+
+  const handleRecordPettyCash = async (e) => {
+    e.preventDefault();
+    try {
+      await api.recordPettyCash({
+        amount: parseFloat(pettyAmountInput) || 0,
+        reason: pettyReasonInput || 'Emergency Supplies',
+        approved_by: 'Kavita Roy (Manager)'
+      });
+      setShowPettyCashModal(false);
+      setPettyAmountInput('');
+      setPettyReasonInput('');
+      fetchCurrentShift();
+      alert('Petty cash outlay recorded from drawer.');
+    } catch (err) {
+      alert('Error recording petty cash: ' + err.message);
+    }
+  };
+
+  const handleCloseShift = async (e) => {
+    e.preventDefault();
+    try {
+      const res = await api.closeShift({
+        closing_cash_actual: parseFloat(countedCashInput) || 0,
+        notes: shiftNotesInput
+      });
+      setShowCloseShiftModal(false);
+      setCountedCashInput('');
+      setShiftNotesInput('');
+      setShiftData(null);
+      fetchCurrentShift();
+      setZReportData(res.z_report);
+    } catch (err) {
+      alert('Error closing shift: ' + err.message);
+    }
+  };
+
   const handleGenerateBill = async () => {
     if (!selectedSessionId) return;
-    requireAdminAuth(async () => {
-      try {
-        const bill = await api.generateBill(selectedSessionId, {
-          discount_amount: discountAmount,
-          discount_reason: discountReason,
-          service_charge: serviceCharge,
-          cashier_name: 'Sunil Mehta (Cashier)'
-        });
-        fetchBillData(selectedSessionId);
-        fetchActiveTables();
-      } catch (err) {
-        alert('Error generating bill: ' + err.message);
-      }
-    }, 'generate table bill');
+    try {
+      const bill = await api.generateBill(selectedSessionId, {
+        discount_amount: discountAmount,
+        discount_reason: discountReason,
+        coupon_code: couponCode,
+        service_charge: serviceCharge,
+        tip_amount: tipAmount,
+        cashier_name: 'Sunil Mehta (Cashier)'
+      });
+      fetchBillData(selectedSessionId);
+      fetchActiveTables();
+      fetchCurrentShift();
+    } catch (err) {
+      alert('Error generating bill: ' + err.message);
+    }
   };
 
   const handleRecordPayment = async (e) => {
@@ -126,94 +241,230 @@ export default function BillingPOS() {
       return;
     }
 
-    requireAdminAuth(async () => {
-      setProcessingPay(true);
-      try {
-        const res = await api.recordPayment(currentBill.id, {
-          method: paymentMethod,
-          amount: amt,
-          reference_id: referenceId,
-          payer_name: payerName,
-          processed_by: 'Sunil Mehta (Cashier)'
-        });
+    setProcessingPay(true);
+    try {
+      const res = await api.recordPayment(currentBill.id, {
+        method: paymentMethod,
+        amount: amt,
+        reference_id: referenceId,
+        payer_name: payerName,
+        processed_by: 'Sunil Mehta (Cashier)'
+      });
 
-        // Clear input fields
-        setReferenceId('');
-        setPayerName('');
+      // Clear input fields
+      setReferenceId('');
+      setPayerName('');
 
-        // Refresh bill state
-        await fetchBillData(selectedSessionId);
-        await fetchActiveTables();
+      // Refresh bill state
+      await fetchBillData(selectedSessionId);
+      await fetchActiveTables();
+      await fetchCurrentShift();
 
-        // If fully settled, display receipt modal
-        if (res.bill?.status === 'PAID') {
-          setReceiptBill(res.bill);
-        }
-      } catch (err) {
-        alert('Error processing payment: ' + err.message);
-      } finally {
-        setProcessingPay(false);
+      // If fully settled, display receipt modal
+      if (res.bill?.status === 'PAID') {
+        setReceiptBill(res.bill);
       }
-    }, 'record payment and settle bill');
+    } catch (err) {
+      alert('Error processing payment: ' + err.message);
+    } finally {
+      setProcessingPay(false);
+    }
   };
 
   const handleCloseSession = async (customBill = null) => {
-    requireAdminAuth(async () => {
-      const targetSessionId = customBill?.session || selectedSessionId;
-      const tableObj = activeTables.find(t => t.active_session?.id?.toString() === targetSessionId?.toString());
-      const tableId = customBill?.table_id || tableObj?.id;
+    const targetSessionId = customBill?.session || selectedSessionId;
+    const tableObj = activeTables.find(t => t.active_session?.id?.toString() === targetSessionId?.toString());
+    const tableId = customBill?.table_id || tableObj?.id;
 
-      try {
-        if (tableId) {
-          await api.closeTableSession(tableId);
-        } else if (targetSessionId) {
-          await api.closeSession(targetSessionId);
-        } else {
-          alert('No active table or session selected to close.');
-          return;
-        }
-        setReceiptBill(null);
-        setSelectedSessionId('');
-        setBillPreview(null);
-        await fetchActiveTables();
-        alert('Table session closed successfully and reset to AVAILABLE! ✨');
-      } catch (err) {
-        alert('Failed to close session: ' + err.message);
+    try {
+      if (tableId) {
+        await api.closeTableSession(tableId);
+      } else if (targetSessionId) {
+        await api.closeSession(targetSessionId);
+      } else {
+        alert('No active table or session selected to close.');
+        return;
       }
-    }, 'close dining session and reset table');
+      setReceiptBill(null);
+      setSelectedSessionId('');
+      setBillPreview(null);
+      await fetchActiveTables();
+      alert('Table session closed successfully and reset to AVAILABLE! ✨');
+    } catch (err) {
+      alert('Failed to close session: ' + err.message);
+    }
   };
 
   const handleMergeBills = async () => {
     if (!selectedSessionId) return;
-    requireAdminAuth(async () => {
-      setMergingBills(true);
-      try {
-        const res = await api.mergeBills(selectedSessionId, {
-          discount_amount: discountAmount,
-          discount_reason: discountReason,
-          cashier_name: 'Cashier'
-        });
-        alert(res.message || 'Bills merged successfully! 🔀');
-        setShowGuestView(false);
-        setSelectedGuest(null);
-        await fetchBillData(selectedSessionId);
-        await fetchActiveTables();
-      } catch (err) {
-        alert('Error merging bills: ' + err.message);
-      } finally {
-        setMergingBills(false);
-      }
-    }, 'merge split bills');
+    setMergingBills(true);
+    try {
+      const res = await api.mergeBills(selectedSessionId, {
+        discount_amount: discountAmount,
+        discount_reason: discountReason,
+        cashier_name: 'Cashier'
+      });
+      alert(res.message || 'Bills merged successfully! 🔀');
+      setShowGuestView(false);
+      setSelectedGuest(null);
+      await fetchBillData(selectedSessionId);
+      await fetchActiveTables();
+    } catch (err) {
+      alert('Error merging bills: ' + err.message);
+    } finally {
+      setMergingBills(false);
+    }
   };
 
   return (
     <div style={{ maxWidth: 1600, margin: '0 auto', padding: '24px' }}>
       {/* Header */}
-      <div style={{ marginBottom: 24 }}>
+      <div style={{ marginBottom: 20 }}>
         <h1 style={{ fontSize: '1.75rem', fontWeight: 800 }}>Billing & Cashier Terminal (POS)</h1>
         <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: 4 }}>
           Itemized tax invoice calculation, discount engine, multi-tender split payments & thermal receipting
         </p>
+      </div>
+
+      {/* Cashier Shift & Drawer Status Bar */}
+      <div style={{
+        background: shiftData ? 'linear-gradient(135deg, #1e1b18 0%, #2a241e 100%)' : 'linear-gradient(135deg, #451a03 0%, #78350f 100%)',
+        borderRadius: 'var(--radius-md)',
+        padding: '16px 20px',
+        color: '#fff',
+        marginBottom: 24,
+        display: 'flex',
+        flexWrap: 'wrap',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 16,
+        boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
+        border: shiftData ? '1px solid rgba(212,163,115,0.3)' : '1px solid rgba(245,158,11,0.4)'
+      }}>
+        {shiftData ? (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+              <div style={{
+                width: 44,
+                height: 44,
+                borderRadius: 12,
+                background: 'rgba(212,163,115,0.15)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: 'var(--accent-gold)'
+              }}>
+                <ShieldCheck size={24} />
+              </div>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontWeight: 800, fontSize: '1rem', color: '#fff' }}>
+                    Shift #{shiftData.shift_number} Active
+                  </span>
+                  <span style={{
+                    fontSize: '0.72rem',
+                    background: 'rgba(34,197,94,0.2)',
+                    color: '#4ade80',
+                    padding: '2px 8px',
+                    borderRadius: 999,
+                    fontWeight: 700
+                  }}>
+                    ● REGISTER OPEN
+                  </span>
+                </div>
+                <div style={{ fontSize: '0.78rem', color: '#c5b8ae', marginTop: 2 }}>
+                  Cashier: <strong>{shiftData.cashier_name}</strong> • Opened: {shiftData.opened_display || 'Today'}
+                </div>
+              </div>
+            </div>
+
+            {/* Live Stats Badges */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center' }}>
+              <div style={{ background: 'rgba(255,255,255,0.06)', padding: '6px 12px', borderRadius: 8 }}>
+                <div style={{ fontSize: '0.68rem', color: '#a89d94' }}>Opening Float</div>
+                <div style={{ fontWeight: 800, fontSize: '0.92rem', color: '#fff' }}>₹{shiftData.opening_float}</div>
+              </div>
+              <div style={{ background: 'rgba(255,255,255,0.06)', padding: '6px 12px', borderRadius: 8 }}>
+                <div style={{ fontSize: '0.68rem', color: '#a89d94' }}>Cash In Drawer (Live)</div>
+                <div style={{ fontWeight: 800, fontSize: '0.92rem', color: '#4ade80' }}>
+                  ₹{shiftData.live_stats?.expected_drawer_cash?.toFixed(2) || shiftData.opening_float}
+                </div>
+              </div>
+              <div style={{ background: 'rgba(255,255,255,0.06)', padding: '6px 12px', borderRadius: 8 }}>
+                <div style={{ fontSize: '0.68rem', color: '#a89d94' }}>Petty Cash Outlay</div>
+                <div style={{ fontWeight: 800, fontSize: '0.92rem', color: '#f87171' }}>
+                  ₹{shiftData.live_stats?.petty_cash_total || 0}
+                </div>
+              </div>
+              <div style={{ background: 'rgba(255,255,255,0.06)', padding: '6px 12px', borderRadius: 8 }}>
+                <div style={{ fontSize: '0.68rem', color: '#a89d94' }}>Total Shift Sales</div>
+                <div style={{ fontWeight: 800, fontSize: '0.92rem', color: 'var(--accent-gold)' }}>
+                  ₹{shiftData.live_stats?.total_sales?.toFixed(2) || 0}
+                </div>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                type="button"
+                onClick={() => setShowPettyCashModal(true)}
+                className="btn btn-secondary"
+                style={{
+                  fontSize: '0.78rem',
+                  padding: '7px 12px',
+                  background: 'rgba(255,255,255,0.1)',
+                  color: '#fff',
+                  border: '1px solid rgba(255,255,255,0.15)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6
+                }}
+              >
+                <PlusCircle size={14} />
+                <span>Petty Cash</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setCountedCashInput(shiftData.live_stats?.expected_drawer_cash?.toFixed(2) || '');
+                  setShowCloseShiftModal(true);
+                }}
+                className="btn btn-primary"
+                style={{
+                  fontSize: '0.78rem',
+                  padding: '7px 14px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6
+                }}
+              >
+                <Receipt size={14} />
+                <span>Close Shift (Z-Report)</span>
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <AlertTriangle size={24} color="#fef08a" />
+              <div>
+                <div style={{ fontWeight: 800, fontSize: '0.98rem' }}>No Active Cashier Shift</div>
+                <div style={{ fontSize: '0.78rem', opacity: 0.9, marginTop: 2 }}>
+                  Declare opening cash drawer float to start tracking shift tenders and generate day-end Z-Reports.
+                </div>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowOpenShiftModal(true)}
+              className="btn btn-primary"
+              style={{ padding: '8px 18px', fontSize: '0.85rem' }}
+            >
+              Start Shift (Open Drawer)
+            </button>
+          </>
+        )}
       </div>
 
       <div style={{
@@ -560,6 +811,100 @@ export default function BillingPOS() {
                 </div>
               </div>
 
+              {/* Promo Coupon & Staff Tip Gratuity Row */}
+              <div style={{
+                background: 'var(--bg-surface-elevated)',
+                padding: '16px',
+                borderRadius: 'var(--radius-sm)',
+                marginBottom: 20,
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                gap: 16
+              }}>
+                {/* Coupon Box */}
+                <div>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: 6 }}>
+                    <Tag size={13} color="var(--accent-gold)" />
+                    <span>Apply Promo Coupon</span>
+                  </label>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <input
+                      type="text"
+                      placeholder="e.g. WELCOME10, FLAT50"
+                      value={couponCode}
+                      onChange={e => setCouponCode(e.target.value.toUpperCase())}
+                      style={{
+                        flex: 1,
+                        padding: '8px 10px',
+                        borderRadius: 'var(--radius-sm)',
+                        background: 'var(--bg-main)',
+                        border: '1px solid var(--border-medium)',
+                        color: 'var(--text-primary)',
+                        fontFamily: 'monospace',
+                        fontWeight: 700,
+                        fontSize: '0.85rem'
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={handleApplyCoupon}
+                      disabled={couponLoading || !couponCode}
+                      className="btn btn-secondary btn-sm"
+                      style={{ padding: '8px 12px' }}
+                    >
+                      {couponLoading ? 'Checking...' : 'Apply'}
+                    </button>
+                  </div>
+                  {couponMessage && (
+                    <div style={{ fontSize: '0.74rem', marginTop: 4, color: couponMessage.includes('saved') ? 'var(--status-available)' : 'var(--status-occupied)' }}>
+                      {couponMessage}
+                    </div>
+                  )}
+                </div>
+
+                {/* Staff Tip Selector */}
+                <div>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: 6 }}>
+                    <HeartHandshake size={13} color="var(--accent-gold)" />
+                    <span>Staff Tip / Gratuity</span>
+                  </label>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    {[
+                      { label: 'None', val: 0 },
+                      { label: '₹20', val: 20 },
+                      { label: '₹50', val: 50 },
+                      { label: '₹100', val: 100 },
+                      { label: '10%', val: Math.round((billPreview?.subtotal || 0) * 0.1) }
+                    ].map(t => (
+                      <button
+                        key={t.label}
+                        type="button"
+                        onClick={() => {
+                          setTipAmount(t.val);
+                        }}
+                        style={{
+                          padding: '5px 10px',
+                          borderRadius: 'var(--radius-sm)',
+                          fontSize: '0.76rem',
+                          fontWeight: 700,
+                          border: tipAmount === t.val ? '1.5px solid var(--accent-gold)' : '1px solid var(--border-medium)',
+                          background: tipAmount === t.val ? 'var(--accent-gold-dim)' : 'var(--bg-main)',
+                          color: tipAmount === t.val ? 'var(--accent-gold)' : 'var(--text-secondary)',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        {t.label}
+                      </button>
+                    ))}
+                  </div>
+                  {tipAmount > 0 && (
+                    <div style={{ fontSize: '0.74rem', marginTop: 4, color: 'var(--status-available)' }}>
+                      +₹{tipAmount} tip added for cafe staff
+                    </div>
+                  )}
+                </div>
+              </div>
+
               {/* Existing Payment Records List (Split tender history) */}
               {billPreview.existing_bill?.payments?.length > 0 && (
                 <div style={{
@@ -881,6 +1226,323 @@ export default function BillingPOS() {
           onClose={() => setReceiptBill(null)}
           onCloseSession={handleCloseSession}
         />
+      )}
+
+      {/* Day-End Z-Report Modal */}
+      {zReportData && (
+        <ZReportModal
+          zReport={zReportData}
+          onClose={() => setZReportData(null)}
+        />
+      )}
+
+      {/* 1. Open Shift Modal */}
+      {showOpenShiftModal && (
+        <div className="modal-backdrop" onClick={() => setShowOpenShiftModal(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 440 }}>
+            <div className="modal-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <Wallet size={20} color="var(--accent-gold)" />
+                <h3 style={{ margin: 0 }}>Open Cashier Shift</h3>
+              </div>
+              <button onClick={() => setShowOpenShiftModal(false)} className="modal-close-btn">&times;</button>
+            </div>
+
+            <form onSubmit={handleOpenShift} style={{ padding: '20px' }}>
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, marginBottom: 6 }}>
+                  Opening Drawer Cash Float (₹)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="any"
+                  required
+                  value={openingFloatInput}
+                  onChange={e => setOpeningFloatInput(e.target.value)}
+                  placeholder="e.g. 2000"
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    borderRadius: 'var(--radius-sm)',
+                    background: 'var(--bg-main)',
+                    border: '1px solid var(--border-medium)',
+                    color: 'var(--text-primary)',
+                    fontFamily: 'inherit',
+                    fontSize: '1.1rem',
+                    fontWeight: 700
+                  }}
+                />
+                <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: 4 }}>
+                  Starting physical cash notes and coins placed in the till drawer.
+                </div>
+              </div>
+
+              <div style={{ marginBottom: 20 }}>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, marginBottom: 6 }}>
+                  Shift / Register Notes (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={shiftNotesInput}
+                  onChange={e => setShiftNotesInput(e.target.value)}
+                  placeholder="e.g. Morning opening register 1"
+                  style={{
+                    width: '100%',
+                    padding: '8px 12px',
+                    borderRadius: 'var(--radius-sm)',
+                    background: 'var(--bg-main)',
+                    border: '1px solid var(--border-medium)',
+                    color: 'var(--text-primary)',
+                    fontFamily: 'inherit'
+                  }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button
+                  type="button"
+                  onClick={() => setShowOpenShiftModal(false)}
+                  className="btn btn-secondary"
+                  style={{ flex: 1 }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  style={{ flex: 2 }}
+                >
+                  Start Shift & Open Drawer
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 2. Petty Cash Expense Modal */}
+      {showPettyCashModal && (
+        <div className="modal-backdrop" onClick={() => setShowPettyCashModal(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 440 }}>
+            <div className="modal-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <DollarSign size={20} color="var(--accent-gold)" />
+                <h3 style={{ margin: 0 }}>Log Petty Cash Outlay</h3>
+              </div>
+              <button onClick={() => setShowPettyCashModal(false)} className="modal-close-btn">&times;</button>
+            </div>
+
+            <form onSubmit={handleRecordPettyCash} style={{ padding: '20px' }}>
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, marginBottom: 6 }}>
+                  Cash Amount Taken from Drawer (₹)
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  step="any"
+                  required
+                  value={pettyAmountInput}
+                  onChange={e => setPettyAmountInput(e.target.value)}
+                  placeholder="e.g. 150"
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    borderRadius: 'var(--radius-sm)',
+                    background: 'var(--bg-main)',
+                    border: '1px solid var(--border-medium)',
+                    color: 'var(--text-primary)',
+                    fontFamily: 'inherit',
+                    fontSize: '1.1rem',
+                    fontWeight: 700
+                  }}
+                />
+              </div>
+
+              <div style={{ marginBottom: 20 }}>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, marginBottom: 6 }}>
+                  Reason / Purpose
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={pettyReasonInput}
+                  onChange={e => setPettyReasonInput(e.target.value)}
+                  placeholder="e.g. Emergency mint leaves, Ice bag, cleaning cloth"
+                  style={{
+                    width: '100%',
+                    padding: '8px 12px',
+                    borderRadius: 'var(--radius-sm)',
+                    background: 'var(--bg-main)',
+                    border: '1px solid var(--border-medium)',
+                    color: 'var(--text-primary)',
+                    fontFamily: 'inherit'
+                  }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button
+                  type="button"
+                  onClick={() => setShowPettyCashModal(false)}
+                  className="btn btn-secondary"
+                  style={{ flex: 1 }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  style={{ flex: 2 }}
+                >
+                  Record Cash Deduction
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 3. Close Shift & Reconcile Modal */}
+      {showCloseShiftModal && shiftData && (
+        <div className="modal-backdrop" onClick={() => setShowCloseShiftModal(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 480 }}>
+            <div className="modal-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <Receipt size={20} color="var(--accent-gold)" />
+                <h3 style={{ margin: 0 }}>Close Shift & Reconcile Z-Report</h3>
+              </div>
+              <button onClick={() => setShowCloseShiftModal(false)} className="modal-close-btn">&times;</button>
+            </div>
+
+            <form onSubmit={handleCloseShift} style={{ padding: '20px' }}>
+              <div style={{
+                background: 'var(--bg-surface-elevated)',
+                padding: '14px',
+                borderRadius: 'var(--radius-sm)',
+                marginBottom: 16,
+                fontSize: '0.84rem'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Opening Float:</span>
+                  <span>₹{shiftData.opening_float}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Cash Sales Collected:</span>
+                  <span style={{ color: 'var(--status-available)', fontWeight: 700 }}>
+                    +₹{shiftData.live_stats?.cash_sales?.toFixed(2) || 0}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Petty Cash Outlay:</span>
+                  <span style={{ color: '#ef4444', fontWeight: 700 }}>
+                    -₹{shiftData.live_stats?.petty_cash_total?.toFixed(2) || 0}
+                  </span>
+                </div>
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  borderTop: '1px solid var(--border-medium)',
+                  paddingTop: 6,
+                  fontWeight: 800
+                }}>
+                  <span>Expected Drawer Cash:</span>
+                  <span style={{ color: 'var(--accent-gold)', fontSize: '1.05rem' }}>
+                    ₹{shiftData.live_stats?.expected_drawer_cash?.toFixed(2) || shiftData.opening_float}
+                  </span>
+                </div>
+              </div>
+
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 700, marginBottom: 6 }}>
+                  Physical Cash Counted in Drawer (₹)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="any"
+                  required
+                  value={countedCashInput}
+                  onChange={e => setCountedCashInput(e.target.value)}
+                  placeholder="Enter counted amount"
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    borderRadius: 'var(--radius-sm)',
+                    background: 'var(--bg-main)',
+                    border: '1px solid var(--border-medium)',
+                    color: 'var(--text-primary)',
+                    fontFamily: 'inherit',
+                    fontSize: '1.15rem',
+                    fontWeight: 800
+                  }}
+                />
+
+                {countedCashInput && (() => {
+                  const expected = shiftData.live_stats?.expected_drawer_cash || parseFloat(shiftData.opening_float);
+                  const counted = parseFloat(countedCashInput) || 0;
+                  const variance = counted - expected;
+                  return (
+                    <div style={{
+                      marginTop: 8,
+                      padding: '8px 12px',
+                      borderRadius: 6,
+                      fontSize: '0.8rem',
+                      fontWeight: 700,
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      background: variance === 0 ? 'rgba(34,197,94,0.1)' : (variance > 0 ? 'rgba(59,130,246,0.1)' : 'rgba(239,68,68,0.1)'),
+                      color: variance === 0 ? '#16a34a' : (variance > 0 ? '#2563eb' : '#dc2626')
+                    }}>
+                      <span>Variance ({variance === 0 ? 'Matched' : (variance > 0 ? 'Surplus' : 'Shortage')}):</span>
+                      <span>{variance >= 0 ? '+' : ''}₹{variance.toFixed(2)}</span>
+                    </div>
+                  );
+                })()}
+              </div>
+
+              <div style={{ marginBottom: 20 }}>
+                <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, marginBottom: 6 }}>
+                  Closing Notes
+                </label>
+                <input
+                  type="text"
+                  value={shiftNotesInput}
+                  onChange={e => setShiftNotesInput(e.target.value)}
+                  placeholder="e.g. Shift ended on time, all orders reconciled"
+                  style={{
+                    width: '100%',
+                    padding: '8px 12px',
+                    borderRadius: 'var(--radius-sm)',
+                    background: 'var(--bg-main)',
+                    border: '1px solid var(--border-medium)',
+                    color: 'var(--text-primary)',
+                    fontFamily: 'inherit'
+                  }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button
+                  type="button"
+                  onClick={() => setShowCloseShiftModal(false)}
+                  className="btn btn-secondary"
+                  style={{ flex: 1 }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  style={{ flex: 2 }}
+                >
+                  Close Shift & Generate Z-Report
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   );

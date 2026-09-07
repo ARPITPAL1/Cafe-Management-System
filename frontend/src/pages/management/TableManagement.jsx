@@ -25,7 +25,7 @@ import {
 import ReservationsManagementModal from '../../components/ReservationsManagementModal';
 
 export default function TableManagement() {
-  const { cafeInfo, waiterCallAlertsEnabled, toggleWaiterCallAlerts, requireAdminAuth } = useAuth();
+  const { cafeInfo, waiterCallAlertsEnabled, toggleWaiterCallAlerts } = useAuth();
   const navigate = useNavigate();
   const [tables, setTables] = useState([]);
   const [reservationsModalOpen, setReservationsModalOpen] = useState(false);
@@ -99,16 +99,14 @@ export default function TableManagement() {
   const handleAddTable = async (e) => {
     e.preventDefault();
     if (!newTableData.number) return;
-    requireAdminAuth(async () => {
-      try {
-        await api.addTable(newTableData);
-        setAddTableOpen(false);
-        setNewTableData({ number: '', capacity: 4, shape: 'SQUARE', floor_section: 'Indoor Main Hall' });
-        fetchTables();
-      } catch (err) {
-        alert('Error creating table: ' + err.message);
-      }
-    }, 'add new table');
+    try {
+      await api.addTable(newTableData);
+      setAddTableOpen(false);
+      setNewTableData({ number: '', capacity: 4, shape: 'SQUARE', floor_section: 'Indoor Main Hall' });
+      fetchTables();
+    } catch (err) {
+      alert('Error creating table: ' + err.message);
+    }
   };
 
   const handleOpenSession = (table) => {
@@ -119,32 +117,28 @@ export default function TableManagement() {
   const handleConfirmOpenSession = async (e) => {
     if (e) e.preventDefault();
     if (!openSessionModalTable) return;
-    requireAdminAuth(async () => {
-      setSessionSubmitting(true);
-      try {
-        await api.openTableSession(openSessionModalTable.id, sessionGuestCount);
-        setOpenSessionModalTable(null);
-        await fetchTables();
-      } catch (err) {
-        alert('Failed to open session: ' + err.message);
-      } finally {
-        setSessionSubmitting(false);
-      }
-    }, 'open table dining session');
+    setSessionSubmitting(true);
+    try {
+      await api.openTableSession(openSessionModalTable.id, sessionGuestCount);
+      setOpenSessionModalTable(null);
+      await fetchTables();
+    } catch (err) {
+      alert('Failed to open session: ' + err.message);
+    } finally {
+      setSessionSubmitting(false);
+    }
   };
 
   const handleCloseSession = async (table) => {
-    requireAdminAuth(async () => {
-      if (!window.confirm(`Are you sure you want to close the session on ${table.number} and reset the table to AVAILABLE?`)) {
-        return;
-      }
-      try {
-        await api.closeTableSession(table.id);
-        fetchTables();
-      } catch (err) {
-        alert('Failed to close session: ' + err.message);
-      }
-    }, 'close table session');
+    if (!window.confirm(`Are you sure you want to close the session on ${table.number} and reset the table to AVAILABLE?`)) {
+      return;
+    }
+    try {
+      await api.closeTableSession(table.id);
+      fetchTables();
+    } catch (err) {
+      alert('Failed to close session: ' + err.message);
+    }
   };
 
   const handleDismissWaiter = async (table) => {
@@ -170,55 +164,53 @@ export default function TableManagement() {
   const handleAddDishSubmit = async (e) => {
     e.preventDefault();
     if (!selectedDishId || !addDishTable) return;
-    requireAdminAuth(async () => {
-      setSubmittingDish(true);
+    setSubmittingDish(true);
 
-      try {
-        const session = addDishTable.active_session;
-        if (!session) {
-          alert('No active session on this table. Opening session first...');
-          await api.openTableSession(addDishTable.id);
-        }
+    try {
+      const session = addDishTable.active_session;
+      if (!session) {
+        alert('No active session on this table. Opening session first...');
+        await api.openTableSession(addDishTable.id);
+      }
 
-        // Check if there is an existing active order to append to, or create one
-        const ordersRes = await api.getOrders(`session_id=${session ? session.id : ''}&active_only=true`);
-        const existingOrder = ordersRes.length > 0 ? ordersRes[0] : null;
+      // Check if there is an existing active order to append to, or create one
+      const ordersRes = await api.getOrders(`session_id=${session ? session.id : ''}&active_only=true`);
+      const existingOrder = ordersRes.length > 0 ? ordersRes[0] : null;
 
-        const mItem = menuItems.find(m => m.id === parseInt(selectedDishId));
-        if (!mItem) return;
+      const mItem = menuItems.find(m => m.id === parseInt(selectedDishId));
+      if (!mItem) return;
 
-        if (existingOrder) {
-          await api.addItemsToOrder(existingOrder.id, [{
+      if (existingOrder) {
+        await api.addItemsToOrder(existingOrder.id, [{
+          menu_item_id: mItem.id,
+          quantity: dishQty,
+          unit_price: mItem.price,
+          special_instructions: dishNotes
+        }], 'Staff POS');
+      } else {
+        await api.createOrder({
+          table_id: addDishTable.id,
+          order_source: 'WAITER_MANUAL',
+          items: [{
             menu_item_id: mItem.id,
             quantity: dishQty,
             unit_price: mItem.price,
             special_instructions: dishNotes
-          }], 'Staff POS');
-        } else {
-          await api.createOrder({
-            table_id: addDishTable.id,
-            order_source: 'WAITER_MANUAL',
-            items: [{
-              menu_item_id: mItem.id,
-              quantity: dishQty,
-              unit_price: mItem.price,
-              special_instructions: dishNotes
-            }],
-            notes: 'Added manually by waiter POS'
-          });
-        }
-
-        setAddDishTable(null);
-        setSelectedDishId('');
-        setDishQty(1);
-        setDishNotes('');
-        fetchTables();
-      } catch (err) {
-        alert('Failed to add dish: ' + err.message);
-      } finally {
-        setSubmittingDish(false);
+          }],
+          notes: 'Added manually by waiter POS'
+        });
       }
-    }, 'add dish to table order');
+
+      setAddDishTable(null);
+      setSelectedDishId('');
+      setDishQty(1);
+      setDishNotes('');
+      fetchTables();
+    } catch (err) {
+      alert('Failed to add dish: ' + err.message);
+    } finally {
+      setSubmittingDish(false);
+    }
   };
 
   const handleViewOrder = async (table) => {

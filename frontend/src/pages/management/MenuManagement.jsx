@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../../services/api';
-import { useAuth } from '../../context/AuthContext';
 import {
   Plus,
   Search,
@@ -15,11 +14,17 @@ import {
   Clock,
   Sparkles,
   Layers,
-  X
+  X,
+  Boxes,
+  Package,
+  AlertTriangle,
+  Scale,
+  RefreshCw,
+  BookOpen,
+  ArrowUpRight
 } from 'lucide-react';
 
 export default function MenuManagement() {
-  const { requireAdminAuth } = useAuth();
   const [catalog, setCatalog] = useState({ categories: [], global_addons: [] });
   const [loading, setLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState('ALL');
@@ -27,7 +32,7 @@ export default function MenuManagement() {
   const [addDishOpen, setAddDishOpen] = useState(false);
   const [addCatOpen, setAddCatOpen] = useState(false);
 
-  // Form State
+  // Form state
   const [dishForm, setDishForm] = useState({
     name: '',
     category_id: '',
@@ -45,6 +50,34 @@ export default function MenuManagement() {
 
   const [newCatName, setNewCatName] = useState('');
 
+  // Top Navigation Tabs
+  const [activeTab, setActiveTab] = useState('CATALOG'); // 'CATALOG' | 'INVENTORY'
+
+  // Inventory state
+  const [inventoryData, setInventoryData] = useState({ ingredients: [], low_stock_count: 0, out_of_stock_count: 0, total_count: 0 });
+  const [inventoryLoading, setInventoryLoading] = useState(false);
+  const [addIngredientOpen, setAddIngredientOpen] = useState(false);
+  const [ingredientForm, setIngredientForm] = useState({
+    name: '',
+    category: 'General',
+    unit: 'g',
+    current_stock: '1000',
+    min_alert_level: '200',
+    cost_per_unit: '0.50',
+    supplier: ''
+  });
+  const [restockOpen, setRestockOpen] = useState(false);
+  const [selectedIngredient, setSelectedIngredient] = useState(null);
+  const [restockQty, setRestockQty] = useState('');
+  const [restockNotes, setRestockNotes] = useState('');
+
+  // Recipe Modal state
+  const [recipeModalOpen, setRecipeModalOpen] = useState(false);
+  const [recipeItem, setRecipeItem] = useState(null);
+  const [recipeIngredients, setRecipeIngredients] = useState([]);
+  const [selectedIngredientToAdd, setSelectedIngredientToAdd] = useState('');
+  const [ingredientQtyToAdd, setIngredientQtyToAdd] = useState('');
+
   const fetchMenu = async () => {
     try {
       const res = await api.getMenuCatalog(false);
@@ -59,67 +92,178 @@ export default function MenuManagement() {
     }
   };
 
+  const fetchInventory = async () => {
+    setInventoryLoading(true);
+    try {
+      const res = await api.getInventory();
+      setInventoryData(res);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setInventoryLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchMenu();
+    fetchInventory();
   }, []);
 
+  const handleAddIngredient = async (e) => {
+    e.preventDefault();
+    try {
+      await api.addIngredient({
+        ...ingredientForm,
+        current_stock: parseFloat(ingredientForm.current_stock) || 0,
+        min_alert_level: parseFloat(ingredientForm.min_alert_level) || 100,
+        cost_per_unit: parseFloat(ingredientForm.cost_per_unit) || 0
+      });
+      setAddIngredientOpen(false);
+      setIngredientForm({
+        name: '',
+        category: 'General',
+        unit: 'g',
+        current_stock: '1000',
+        min_alert_level: '200',
+        cost_per_unit: '0.50',
+        supplier: ''
+      });
+      fetchInventory();
+      alert('Ingredient added to raw materials inventory! 📦');
+    } catch (err) {
+      alert('Error adding ingredient: ' + err.message);
+    }
+  };
+
+  const handleRestock = async (e) => {
+    e.preventDefault();
+    if (!selectedIngredient) return;
+    try {
+      await api.restockIngredient(selectedIngredient.id, {
+        quantity: parseFloat(restockQty) || 0,
+        notes: restockNotes
+      });
+      setRestockOpen(false);
+      setRestockQty('');
+      setRestockNotes('');
+      setSelectedIngredient(null);
+      fetchInventory();
+      alert('Stock successfully restocked! 📈');
+    } catch (err) {
+      alert('Error restocking: ' + err.message);
+    }
+  };
+
+  const handleOpenRecipeModal = async (item) => {
+    setRecipeItem(item);
+    setRecipeModalOpen(true);
+    try {
+      const res = await api.getItemRecipe(item.id);
+      setRecipeIngredients(res.recipe_items || []);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleAddRecipeIngredient = () => {
+    if (!selectedIngredientToAdd || !ingredientQtyToAdd) return;
+    const ing = inventoryData.ingredients.find(i => i.id.toString() === selectedIngredientToAdd.toString());
+    if (!ing) return;
+
+    const existingIdx = recipeIngredients.findIndex(r => (r.ingredient || r.ingredient_id) === ing.id);
+    const newEntry = {
+      ingredient: ing.id,
+      ingredient_id: ing.id,
+      ingredient_name: ing.name,
+      ingredient_unit: ing.unit,
+      cost_per_unit: ing.cost_per_unit,
+      quantity: parseFloat(ingredientQtyToAdd),
+      estimated_cost: parseFloat(ingredientQtyToAdd) * parseFloat(ing.cost_per_unit)
+    };
+
+    if (existingIdx >= 0) {
+      const updated = [...recipeIngredients];
+      updated[existingIdx] = newEntry;
+      setRecipeIngredients(updated);
+    } else {
+      setRecipeIngredients([...recipeIngredients, newEntry]);
+    }
+
+    setSelectedIngredientToAdd('');
+    setIngredientQtyToAdd('');
+  };
+
+  const handleRemoveRecipeIngredient = (idx) => {
+    setRecipeIngredients(recipeIngredients.filter((_, i) => i !== idx));
+  };
+
+  const handleSaveRecipe = async () => {
+    if (!recipeItem) return;
+    try {
+      const payload = recipeIngredients.map(r => ({
+        ingredient_id: r.ingredient || r.ingredient_id,
+        quantity: r.quantity
+      }));
+      await api.saveItemRecipe(recipeItem.id, payload);
+      setRecipeModalOpen(false);
+      fetchMenu();
+      alert(`Recipe saved for ${recipeItem.name}! Dish food cost recalibrated based on BOM.`);
+    } catch (err) {
+      alert('Error saving recipe: ' + err.message);
+    }
+  };
+
   const handleToggleStock = async (itemId) => {
-    requireAdminAuth(async () => {
-      try {
-        await api.toggleItemStock(itemId);
-        fetchMenu();
-      } catch (err) {
-        alert('Error updating availability: ' + err.message);
-      }
-    }, 'change item stock availability');
+    try {
+      await api.toggleItemStock(itemId);
+      fetchMenu();
+    } catch (err) {
+      alert('Error updating availability: ' + err.message);
+    }
   };
 
   const handleAddDish = async (e) => {
     e.preventDefault();
-    requireAdminAuth(async () => {
-      try {
-        await api.addMenuItem({
-          ...dishForm,
-          category: parseInt(dishForm.category_id),
-          price: parseFloat(dishForm.price),
-          food_cost: parseFloat(dishForm.food_cost || 0),
-          packaging_cost: parseFloat(dishForm.packaging_cost || 0)
-        });
-        setAddDishOpen(false);
-        setDishForm({
-          name: '',
-          category_id: catalog.categories[0]?.id || '',
-          description: '',
-          price: '',
-          food_cost: '',
-          packaging_cost: '5.00',
-          is_veg: true,
-          spice_level: 0,
-          prep_time_mins: 15,
-          is_bestseller: false,
-          is_recommended: false,
-          image_url: ''
-        });
-        fetchMenu();
-      } catch (err) {
-        alert('Failed to add dish: ' + err.message);
-      }
-    }, 'add new menu dish');
+    try {
+      await api.addMenuItem({
+        ...dishForm,
+        category: parseInt(dishForm.category_id),
+        price: parseFloat(dishForm.price),
+        food_cost: parseFloat(dishForm.food_cost || 0),
+        packaging_cost: parseFloat(dishForm.packaging_cost || 0)
+      });
+      setAddDishOpen(false);
+      setDishForm({
+        name: '',
+        category_id: catalog.categories[0]?.id || '',
+        description: '',
+        price: '',
+        food_cost: '',
+        packaging_cost: '5.00',
+        is_veg: true,
+        spice_level: 0,
+        prep_time_mins: 15,
+        is_bestseller: false,
+        is_recommended: false,
+        image_url: ''
+      });
+      fetchMenu();
+    } catch (err) {
+      alert('Failed to add dish: ' + err.message);
+    }
   };
 
   const handleAddCategory = async (e) => {
     e.preventDefault();
     if (!newCatName) return;
-    requireAdminAuth(async () => {
-      try {
-        await api.addCategory({ name: newCatName, display_order: catalog.categories.length + 1 });
-        setNewCatName('');
-        setAddCatOpen(false);
-        fetchMenu();
-      } catch (err) {
-        alert('Failed to add category: ' + err.message);
-      }
-    }, 'create menu category');
+    try {
+      await api.addCategory({ name: newCatName, display_order: catalog.categories.length + 1 });
+      setNewCatName('');
+      setAddCatOpen(false);
+      fetchMenu();
+    } catch (err) {
+      alert('Failed to add category: ' + err.message);
+    }
   };
 
   // Flatten items for listing
@@ -161,238 +305,575 @@ export default function MenuManagement() {
         </div>
 
         <div style={{ display: 'flex', gap: 10 }}>
-          <button onClick={() => setAddCatOpen(true)} className="btn btn-secondary btn-sm">
-            <Layers size={14} />
-            <span>+ Category</span>
-          </button>
-          <button onClick={() => setAddDishOpen(true)} className="btn btn-primary btn-sm">
-            <Plus size={16} />
-            <span>+ Add Dish</span>
-          </button>
+          {activeTab === 'CATALOG' ? (
+            <>
+              <button onClick={() => setAddCatOpen(true)} className="btn btn-secondary btn-sm">
+                <Layers size={14} />
+                <span>+ Category</span>
+              </button>
+              <button onClick={() => setAddDishOpen(true)} className="btn btn-primary btn-sm">
+                <Plus size={16} />
+                <span>+ Add Dish</span>
+              </button>
+            </>
+          ) : (
+            <button onClick={() => setAddIngredientOpen(true)} className="btn btn-primary btn-sm">
+              <Plus size={16} />
+              <span>+ New Ingredient</span>
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Filter & Search Bar */}
+      {/* Master View Switcher: Catalog vs Raw Inventory & Recipes */}
       <div style={{
         display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        flexWrap: 'wrap',
-        gap: 16,
+        gap: 10,
         marginBottom: 24,
-        paddingBottom: 16,
-        borderBottom: '1px solid var(--border-subtle)'
+        background: 'var(--bg-surface-elevated)',
+        padding: '6px',
+        borderRadius: 'var(--radius-sm)',
+        width: 'fit-content'
       }}>
-        {/* Category Pills */}
-        <div style={{ display: 'flex', gap: 8, overflowX: 'auto', padding: '4px 0' }}>
-          <button
-            onClick={() => setSelectedCategory('ALL')}
-            style={{
-              padding: '6px 14px',
-              borderRadius: 'var(--radius-full)',
-              fontSize: '0.84rem',
-              fontWeight: 600,
-              cursor: 'pointer',
-              border: selectedCategory === 'ALL' ? '1px solid var(--accent-gold)' : '1px solid var(--border-subtle)',
-              background: selectedCategory === 'ALL' ? 'var(--accent-gold-dim)' : 'var(--bg-surface-elevated)',
-              color: selectedCategory === 'ALL' ? 'var(--accent-gold)' : 'var(--text-secondary)'
-            }}
-          >
-            All Items ({allItems.length})
-          </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('CATALOG')}
+          style={{
+            padding: '8px 18px',
+            borderRadius: 'var(--radius-sm)',
+            fontWeight: 700,
+            fontSize: '0.86rem',
+            border: 'none',
+            background: activeTab === 'CATALOG' ? 'var(--accent-gold)' : 'transparent',
+            color: activeTab === 'CATALOG' ? '#fff' : 'var(--text-secondary)',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            transition: 'all 0.15s ease'
+          }}
+        >
+          <Layers size={16} />
+          <span>Menu Catalog ({allItems.length})</span>
+        </button>
 
-          {catalog.categories?.map(cat => (
-            <button
-              key={cat.id}
-              onClick={() => setSelectedCategory(cat.name)}
-              style={{
-                padding: '6px 14px',
-                borderRadius: 'var(--radius-full)',
-                fontSize: '0.84rem',
-                fontWeight: 600,
-                cursor: 'pointer',
-                border: selectedCategory === cat.name ? '1px solid var(--accent-gold)' : '1px solid var(--border-subtle)',
-                background: selectedCategory === cat.name ? 'var(--accent-gold-dim)' : 'var(--bg-surface-elevated)',
-                color: selectedCategory === cat.name ? 'var(--accent-gold)' : 'var(--text-secondary)'
-              }}
-            >
-              {cat.name} ({cat.items?.length || 0})
-            </button>
-          ))}
-        </div>
-
-        {/* Search */}
-        <div style={{ position: 'relative', width: 260 }}>
-          <Search size={16} color="var(--text-muted)" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)' }} />
-          <input
-            type="text"
-            placeholder="Search dish or category..."
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            style={{
-              width: '100%',
-              padding: '8px 12px 8px 34px',
-              borderRadius: 'var(--radius-sm)',
-              background: 'var(--bg-surface-elevated)',
-              border: '1px solid var(--border-subtle)',
-              color: 'var(--text-primary)',
-              fontFamily: 'inherit',
-              fontSize: '0.85rem'
-            }}
-          />
-        </div>
+        <button
+          type="button"
+          onClick={() => setActiveTab('INVENTORY')}
+          style={{
+            padding: '8px 18px',
+            borderRadius: 'var(--radius-sm)',
+            fontWeight: 700,
+            fontSize: '0.86rem',
+            border: 'none',
+            background: activeTab === 'INVENTORY' ? 'var(--accent-gold)' : 'transparent',
+            color: activeTab === 'INVENTORY' ? '#fff' : 'var(--text-secondary)',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            transition: 'all 0.15s ease'
+          }}
+        >
+          <Boxes size={16} />
+          <span>Raw Material Inventory & BOM Recipes</span>
+          {inventoryData.low_stock_count > 0 && (
+            <span style={{
+              background: '#ef4444',
+              color: '#fff',
+              padding: '2px 7px',
+              borderRadius: 999,
+              fontSize: '0.7rem',
+              fontWeight: 800
+            }}>
+              {inventoryData.low_stock_count} Alert
+            </span>
+          )}
+        </button>
       </div>
 
-      {/* Dishes Grid */}
-      {loading ? (
-        <div style={{ padding: '60px 0', textAlign: 'center', color: 'var(--text-muted)' }}>
-          Loading menu catalog...
-        </div>
-      ) : (
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
-          gap: 20
-        }}>
-          {filteredItems.map(dish => (
-            <div
-              key={dish.id}
-              className="glass-panel"
-              style={{
-                overflow: 'hidden',
-                display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'space-between',
-                opacity: dish.is_available ? 1 : 0.65,
-                border: dish.is_available ? '1px solid var(--border-subtle)' : '1px dashed var(--status-occupied)',
-                transition: 'all 0.2s ease'
-              }}
-            >
-              <div>
-                {/* Dish image thumbnail if present */}
-                {dish.image_url && (
-                  <div style={{ height: 140, overflow: 'hidden', position: 'relative' }}>
-                    <img
-                      src={dish.image_url}
-                      alt={dish.name}
-                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                      onError={e => e.target.style.display = 'none'}
-                    />
-                    <div style={{
-                      position: 'absolute',
-                      top: 10,
-                      left: 10,
-                      background: 'rgba(0,0,0,0.7)',
-                      backdropFilter: 'blur(4px)',
-                      padding: '2px 8px',
-                      borderRadius: 4,
-                      fontSize: '0.72rem',
-                      fontWeight: 700,
-                      color: dish.is_veg ? 'var(--status-available)' : 'var(--status-occupied)'
-                    }}>
-                      {dish.is_veg ? '🟢 VEG' : '🔴 NON-VEG'}
-                    </div>
+      {activeTab === 'CATALOG' ? (
+        <>
+          {/* Filter & Search Bar */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: 16,
+            marginBottom: 24,
+            paddingBottom: 16,
+            borderBottom: '1px solid var(--border-subtle)'
+          }}>
+            {/* Category Pills */}
+            <div style={{ display: 'flex', gap: 8, overflowX: 'auto', padding: '4px 0' }}>
+              <button
+                onClick={() => setSelectedCategory('ALL')}
+                style={{
+                  padding: '6px 14px',
+                  borderRadius: 'var(--radius-full)',
+                  fontSize: '0.84rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  border: selectedCategory === 'ALL' ? '1px solid var(--accent-gold)' : '1px solid var(--border-subtle)',
+                  background: selectedCategory === 'ALL' ? 'var(--accent-gold-dim)' : 'var(--bg-surface-elevated)',
+                  color: selectedCategory === 'ALL' ? 'var(--accent-gold)' : 'var(--text-secondary)'
+                }}
+              >
+                All Items ({allItems.length})
+              </button>
 
-                    {!dish.is_available && (
-                      <div style={{
-                        position: 'absolute',
-                        inset: 0,
-                        background: 'rgba(0,0,0,0.65)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        color: 'var(--status-occupied)',
-                        fontWeight: 800,
-                        fontSize: '1rem',
-                        letterSpacing: '0.05em'
-                      }}>
-                        OUT OF STOCK
+              {catalog.categories?.map(cat => (
+                <button
+                  key={cat.id}
+                  onClick={() => setSelectedCategory(cat.name)}
+                  style={{
+                    padding: '6px 14px',
+                    borderRadius: 'var(--radius-full)',
+                    fontSize: '0.84rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    border: selectedCategory === cat.name ? '1px solid var(--accent-gold)' : '1px solid var(--border-subtle)',
+                    background: selectedCategory === cat.name ? 'var(--accent-gold-dim)' : 'var(--bg-surface-elevated)',
+                    color: selectedCategory === cat.name ? 'var(--accent-gold)' : 'var(--text-secondary)'
+                  }}
+                >
+                  {cat.name} ({cat.items?.length || 0})
+                </button>
+              ))}
+            </div>
+
+            {/* Search */}
+            <div style={{ position: 'relative', width: 260 }}>
+              <Search size={16} color="var(--text-muted)" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)' }} />
+              <input
+                type="text"
+                placeholder="Search dish or category..."
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '8px 12px 8px 34px',
+                  borderRadius: 'var(--radius-sm)',
+                  background: 'var(--bg-surface-elevated)',
+                  border: '1px solid var(--border-subtle)',
+                  color: 'var(--text-primary)',
+                  fontFamily: 'inherit',
+                  fontSize: '0.85rem'
+                }}
+              />
+            </div>
+          </div>
+
+          {/* Dishes Grid */}
+          {loading ? (
+            <div style={{ padding: '60px 0', textAlign: 'center', color: 'var(--text-muted)' }}>
+              Loading menu catalog...
+            </div>
+          ) : (
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
+              gap: 20
+            }}>
+              {filteredItems.map(dish => (
+                <div
+                  key={dish.id}
+                  className="glass-panel"
+                  style={{
+                    overflow: 'hidden',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                    opacity: dish.is_available ? 1 : 0.65,
+                    border: dish.is_available ? '1px solid var(--border-subtle)' : '1px dashed var(--status-occupied)',
+                    transition: 'all 0.2s ease'
+                  }}
+                >
+                  <div>
+                    {/* Dish image thumbnail if present */}
+                    {dish.image_url && (
+                      <div style={{ height: 140, overflow: 'hidden', position: 'relative' }}>
+                        <img
+                          src={dish.image_url}
+                          alt={dish.name}
+                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                          onError={e => e.target.style.display = 'none'}
+                        />
+                        <div style={{
+                          position: 'absolute',
+                          top: 10,
+                          left: 10,
+                          background: 'rgba(0,0,0,0.7)',
+                          backdropFilter: 'blur(4px)',
+                          padding: '2px 8px',
+                          borderRadius: 4,
+                          fontSize: '0.72rem',
+                          fontWeight: 700,
+                          color: dish.is_veg ? 'var(--status-available)' : 'var(--status-occupied)'
+                        }}>
+                          {dish.is_veg ? '🟢 VEG' : '🔴 NON-VEG'}
+                        </div>
+
+                        {!dish.is_available && (
+                          <div style={{
+                            position: 'absolute',
+                            inset: 0,
+                            background: 'rgba(0,0,0,0.65)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            color: 'var(--status-occupied)',
+                            fontWeight: 800,
+                            fontSize: '1rem',
+                            letterSpacing: '0.05em'
+                          }}>
+                            OUT OF STOCK
+                          </div>
+                        )}
                       </div>
                     )}
-                  </div>
-                )}
 
-                <div style={{ padding: '16px' }}>
-                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
-                    <div>
-                      <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                        {dish.name}
-                      </h3>
-                      <div style={{ fontSize: '0.74rem', color: 'var(--accent-gold)', fontWeight: 600 }}>
-                        {dish.category_name}
+                    <div style={{ padding: '16px' }}>
+                      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
+                        <div>
+                          <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                            {dish.name}
+                          </h3>
+                          <div style={{ fontSize: '0.74rem', color: 'var(--accent-gold)', fontWeight: 600 }}>
+                            {dish.category_name}
+                          </div>
+                        </div>
+
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{ fontFamily: 'var(--font-heading)', fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                            ₹{dish.price}
+                          </div>
+                          <div style={{ fontSize: '0.72rem', color: 'var(--status-available)', fontWeight: 600 }}>
+                            {dish.margin_percentage}% margin
+                          </div>
+                        </div>
+                      </div>
+
+                      {dish.description && (
+                        <p style={{
+                          fontSize: '0.8rem',
+                          color: 'var(--text-muted)',
+                          marginTop: 8,
+                          display: '-webkit-box',
+                          WebkitLineClamp: 2,
+                          WebkitBoxOrient: 'vertical',
+                          overflow: 'hidden'
+                        }}>
+                          {dish.description}
+                        </p>
+                      )}
+
+                      {/* Food Cost & Profit Metrics */}
+                      <div style={{
+                        marginTop: 14,
+                        background: 'var(--bg-surface-elevated)',
+                        borderRadius: 'var(--radius-sm)',
+                        padding: '8px 12px',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        fontSize: '0.75rem',
+                        border: '1px solid var(--border-subtle)'
+                      }}>
+                        <div>
+                          <span style={{ color: 'var(--text-muted)' }}>Food Cost: </span>
+                          <strong style={{ color: 'var(--text-secondary)' }}>₹{dish.food_cost}</strong>
+                        </div>
+                        <div>
+                          <span style={{ color: 'var(--text-muted)' }}>Gross Profit: </span>
+                          <strong style={{ color: 'var(--status-available)' }}>+₹{dish.gross_margin}</strong>
+                        </div>
                       </div>
                     </div>
-
-                    <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontFamily: 'var(--font-heading)', fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                        ₹{dish.price}
-                      </div>
-                      <div style={{ fontSize: '0.72rem', color: 'var(--status-available)', fontWeight: 600 }}>
-                        {dish.margin_percentage}% margin
-                      </div>
-                    </div>
                   </div>
 
-                  {dish.description && (
-                    <p style={{
-                      fontSize: '0.8rem',
-                      color: 'var(--text-muted)',
-                      marginTop: 8,
-                      display: '-webkit-box',
-                      WebkitLineClamp: 2,
-                      WebkitBoxOrient: 'vertical',
-                      overflow: 'hidden'
-                    }}>
-                      {dish.description}
-                    </p>
-                  )}
-
-                  {/* Food Cost & Profit Metrics */}
+                  {/* Bottom Stock Toggle & Recipe BOM */}
                   <div style={{
-                    marginTop: 14,
-                    background: 'var(--bg-surface-elevated)',
-                    borderRadius: 'var(--radius-sm)',
-                    padding: '8px 12px',
+                    padding: '12px 16px',
+                    borderTop: '1px solid var(--border-subtle)',
                     display: 'flex',
+                    alignItems: 'center',
                     justifyContent: 'space-between',
-                    fontSize: '0.75rem',
-                    border: '1px solid var(--border-subtle)'
+                    background: 'var(--bg-surface)',
+                    gap: 8
                   }}>
-                    <div>
-                      <span style={{ color: 'var(--text-muted)' }}>Food Cost: </span>
-                      <strong style={{ color: 'var(--text-secondary)' }}>₹{dish.food_cost}</strong>
-                    </div>
-                    <div>
-                      <span style={{ color: 'var(--text-muted)' }}>Gross Profit: </span>
-                      <strong style={{ color: 'var(--status-available)' }}>+₹{dish.gross_margin}</strong>
-                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleOpenRecipeModal(dish)}
+                      className="btn btn-secondary btn-sm"
+                      style={{ fontSize: '0.74rem', display: 'flex', alignItems: 'center', gap: 6 }}
+                      title="Configure Recipe Bill of Materials"
+                    >
+                      <BookOpen size={13} />
+                      <span>Recipe BOM</span>
+                    </button>
+
+                    <button
+                      onClick={() => handleToggleStock(dish.id)}
+                      className={`btn btn-sm ${dish.is_available ? 'btn-secondary' : 'btn-primary'}`}
+                      style={{ fontSize: '0.74rem' }}
+                    >
+                      {dish.is_available ? 'Mark Out' : 'Make Live'}
+                    </button>
                   </div>
                 </div>
-              </div>
-
-              {/* Bottom Stock Toggle */}
+              ))}
+            </div>
+          )}
+        </>
+      ) : (
+        /* Raw Materials Inventory Dashboard */
+        <div>
+          {/* KPI Summary Cards */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+            gap: 16,
+            marginBottom: 24
+          }}>
+            <div className="glass-panel" style={{ padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 14 }}>
               <div style={{
-                padding: '12px 16px',
-                borderTop: '1px solid var(--border-subtle)',
+                width: 44,
+                height: 44,
+                borderRadius: 'var(--radius-sm)',
+                background: 'rgba(59,130,246,0.12)',
+                color: '#3b82f6',
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'space-between',
-                background: 'var(--bg-surface)'
+                justifyContent: 'center'
               }}>
-                <span style={{ fontSize: '0.78rem', color: dish.is_available ? 'var(--status-available)' : 'var(--status-occupied)', fontWeight: 700 }}>
-                  {dish.is_available ? 'In Stock (Live)' : 'Marked Out of Stock'}
-                </span>
-
-                <button
-                  onClick={() => handleToggleStock(dish.id)}
-                  className={`btn btn-sm ${dish.is_available ? 'btn-secondary' : 'btn-primary'}`}
-                  style={{ fontSize: '0.75rem' }}
-                >
-                  {dish.is_available ? 'Mark Out of Stock' : 'Make Available'}
-                </button>
+                <Boxes size={22} />
+              </div>
+              <div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Total Raw Materials</div>
+                <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                  {inventoryData.total_count || inventoryData.ingredients?.length || 0}
+                </div>
               </div>
             </div>
-          ))}
+
+            <div className="glass-panel" style={{ padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 14 }}>
+              <div style={{
+                width: 44,
+                height: 44,
+                borderRadius: 'var(--radius-sm)',
+                background: (inventoryData.low_stock_count > 0) ? 'rgba(245,158,11,0.15)' : 'rgba(16,185,129,0.12)',
+                color: (inventoryData.low_stock_count > 0) ? '#f59e0b' : '#10b981',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}>
+                <AlertTriangle size={22} />
+              </div>
+              <div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Low Stock Alerts</div>
+                <div style={{ fontSize: '1.4rem', fontWeight: 800, color: (inventoryData.low_stock_count > 0) ? '#f59e0b' : 'var(--status-available)' }}>
+                  {inventoryData.low_stock_count || 0} items
+                </div>
+              </div>
+            </div>
+
+            <div className="glass-panel" style={{ padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 14 }}>
+              <div style={{
+                width: 44,
+                height: 44,
+                borderRadius: 'var(--radius-sm)',
+                background: (inventoryData.out_of_stock_count > 0) ? 'rgba(239,68,68,0.15)' : 'rgba(16,185,129,0.12)',
+                color: (inventoryData.out_of_stock_count > 0) ? '#ef4444' : '#10b981',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}>
+                <XCircle size={22} />
+              </div>
+              <div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Depleted (Out of Stock)</div>
+                <div style={{ fontSize: '1.4rem', fontWeight: 800, color: (inventoryData.out_of_stock_count > 0) ? '#ef4444' : 'var(--text-secondary)' }}>
+                  {inventoryData.out_of_stock_count || 0} items
+                </div>
+              </div>
+            </div>
+
+            <div className="glass-panel" style={{ padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 14 }}>
+              <div style={{
+                width: 44,
+                height: 44,
+                borderRadius: 'var(--radius-sm)',
+                background: 'rgba(16,185,129,0.12)',
+                color: '#10b981',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}>
+                <RefreshCw size={22} />
+              </div>
+              <div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>BOM Inventory Sync</div>
+                <div style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--status-available)' }}>
+                  Automated & Live
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Inventory Table Container */}
+          <div className="glass-panel" style={{ overflow: 'hidden' }}>
+            <div style={{
+              padding: '16px 20px',
+              borderBottom: '1px solid var(--border-subtle)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: 12
+            }}>
+              <div>
+                <h3 style={{ fontSize: '1.05rem', fontWeight: 700 }}>Ingredient Master & Raw Stock</h3>
+                <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 2 }}>
+                  Every order placed on Table QR / POS automatically decrements these stock levels according to dish recipes.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={fetchInventory}
+                className="btn btn-secondary btn-sm"
+                style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+              >
+                <RefreshCw size={14} className={inventoryLoading ? 'spin' : ''} />
+                <span>Refresh Stock</span>
+              </button>
+            </div>
+
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
+                <thead>
+                  <tr style={{ background: 'rgba(255,255,255,0.03)', borderBottom: '1px solid var(--border-subtle)', color: 'var(--text-muted)' }}>
+                    <th style={{ padding: '12px 18px', fontWeight: 600 }}>Material / Ingredient</th>
+                    <th style={{ padding: '12px 18px', fontWeight: 600 }}>Category</th>
+                    <th style={{ padding: '12px 18px', fontWeight: 600 }}>Current Stock</th>
+                    <th style={{ padding: '12px 18px', fontWeight: 600 }}>Min Threshold</th>
+                    <th style={{ padding: '12px 18px', fontWeight: 600 }}>Unit Cost</th>
+                    <th style={{ padding: '12px 18px', fontWeight: 600 }}>Stock Value</th>
+                    <th style={{ padding: '12px 18px', fontWeight: 600 }}>Status</th>
+                    <th style={{ padding: '12px 18px', fontWeight: 600, textAlign: 'right' }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {inventoryData.ingredients?.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} style={{ padding: '36px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                        No raw ingredients registered yet. Click "+ New Ingredient" to start tracking inventory!
+                      </td>
+                    </tr>
+                  ) : (
+                    inventoryData.ingredients?.map(ing => {
+                      const stockVal = (parseFloat(ing.current_stock || 0) * parseFloat(ing.cost_per_unit || 0)).toFixed(2);
+                      const isOut = parseFloat(ing.current_stock) <= 0;
+                      const isLow = !isOut && ing.is_low_stock;
+
+                      return (
+                        <tr
+                          key={ing.id}
+                          style={{
+                            borderBottom: '1px solid var(--border-subtle)',
+                            background: isOut ? 'rgba(239,68,68,0.04)' : isLow ? 'rgba(245,158,11,0.04)' : 'transparent'
+                          }}
+                        >
+                          <td style={{ padding: '14px 18px' }}>
+                            <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{ing.name}</div>
+                            {ing.supplier && (
+                              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                                Supplier: {ing.supplier}
+                              </div>
+                            )}
+                          </td>
+                          <td style={{ padding: '14px 18px' }}>
+                            <span style={{
+                              padding: '3px 8px',
+                              borderRadius: 4,
+                              background: 'var(--bg-surface-elevated)',
+                              fontSize: '0.75rem',
+                              color: 'var(--text-secondary)',
+                              border: '1px solid var(--border-subtle)'
+                            }}>
+                              {ing.category}
+                            </span>
+                          </td>
+                          <td style={{ padding: '14px 18px', fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: '0.95rem' }}>
+                            {ing.current_stock} <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 500 }}>{ing.unit}</span>
+                          </td>
+                          <td style={{ padding: '14px 18px', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+                            {ing.min_alert_level} {ing.unit}
+                          </td>
+                          <td style={{ padding: '14px 18px', color: 'var(--text-secondary)' }}>
+                            ₹{ing.cost_per_unit} / {ing.unit}
+                          </td>
+                          <td style={{ padding: '14px 18px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                            ₹{stockVal}
+                          </td>
+                          <td style={{ padding: '14px 18px' }}>
+                            {isOut ? (
+                              <span style={{
+                                padding: '3px 9px',
+                                borderRadius: 999,
+                                background: 'rgba(239,68,68,0.15)',
+                                color: '#ef4444',
+                                fontWeight: 700,
+                                fontSize: '0.72rem'
+                              }}>
+                                Out of Stock
+                              </span>
+                            ) : isLow ? (
+                              <span style={{
+                                padding: '3px 9px',
+                                borderRadius: 999,
+                                background: 'rgba(245,158,11,0.15)',
+                                color: '#f59e0b',
+                                fontWeight: 700,
+                                fontSize: '0.72rem'
+                              }}>
+                                Low Stock
+                              </span>
+                            ) : (
+                              <span style={{
+                                padding: '3px 9px',
+                                borderRadius: 999,
+                                background: 'rgba(16,185,129,0.15)',
+                                color: 'var(--status-available)',
+                                fontWeight: 700,
+                                fontSize: '0.72rem'
+                              }}>
+                                Adequate
+                              </span>
+                            )}
+                          </td>
+                          <td style={{ padding: '14px 18px', textAlign: 'right' }}>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedIngredient(ing);
+                                setRestockQty('500');
+                                setRestockOpen(true);
+                              }}
+                              className="btn btn-secondary btn-sm"
+                              style={{ fontSize: '0.75rem', padding: '4px 10px' }}
+                            >
+                              Restock +
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       )}
 
@@ -667,6 +1148,498 @@ export default function MenuManagement() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Add Raw Ingredient Modal */}
+      {addIngredientOpen && (
+        <div className="modal-backdrop" onClick={() => setAddIngredientOpen(false)}>
+          <div className="modal-card" onClick={e => e.stopPropagation()} style={{ maxWidth: 480, padding: 24 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
+              <div>
+                <h3 style={{ fontSize: '1.2rem', fontWeight: 800 }}>New Raw Material</h3>
+                <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                  Add raw ingredient to warehouse inventory for automated recipe tracking
+                </p>
+              </div>
+              <button onClick={() => setAddIngredientOpen(false)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleAddIngredient} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: 4 }}>
+                  Ingredient / Item Name
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Arabica Coffee Beans, Full Cream Milk"
+                  value={ingredientForm.name}
+                  onChange={e => setIngredientForm({ ...ingredientForm, name: e.target.value })}
+                  style={{
+                    width: '100%',
+                    padding: '8px 12px',
+                    borderRadius: 'var(--radius-sm)',
+                    background: 'var(--bg-surface-elevated)',
+                    border: '1px solid var(--border-medium)',
+                    color: 'var(--text-primary)',
+                    fontFamily: 'inherit'
+                  }}
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: 4 }}>
+                    Category
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Dairy, Bakery, Produce, Beverage..."
+                    value={ingredientForm.category}
+                    onChange={e => setIngredientForm({ ...ingredientForm, category: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '8px 12px',
+                      borderRadius: 'var(--radius-sm)',
+                      background: 'var(--bg-surface-elevated)',
+                      border: '1px solid var(--border-medium)',
+                      color: 'var(--text-primary)',
+                      fontFamily: 'inherit'
+                    }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: 4 }}>
+                    Unit of Measure
+                  </label>
+                  <select
+                    value={ingredientForm.unit}
+                    onChange={e => setIngredientForm({ ...ingredientForm, unit: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '8px 12px',
+                      borderRadius: 'var(--radius-sm)',
+                      background: 'var(--bg-surface-elevated)',
+                      border: '1px solid var(--border-medium)',
+                      color: 'var(--text-primary)',
+                      fontFamily: 'inherit'
+                    }}
+                  >
+                    <option value="g">Grams (g)</option>
+                    <option value="kg">Kilograms (kg)</option>
+                    <option value="ml">Milliliters (ml)</option>
+                    <option value="l">Liters (l)</option>
+                    <option value="pcs">Pieces / Units (pcs)</option>
+                    <option value="slices">Slices</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: 4 }}>
+                    Opening Stock ({ingredientForm.unit})
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    required
+                    placeholder="1000"
+                    value={ingredientForm.current_stock}
+                    onChange={e => setIngredientForm({ ...ingredientForm, current_stock: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '8px 12px',
+                      borderRadius: 'var(--radius-sm)',
+                      background: 'var(--bg-surface-elevated)',
+                      border: '1px solid var(--border-medium)',
+                      color: 'var(--text-primary)',
+                      fontFamily: 'inherit'
+                    }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: 4 }}>
+                    Min Alert Level ({ingredientForm.unit})
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    required
+                    placeholder="200"
+                    value={ingredientForm.min_alert_level}
+                    onChange={e => setIngredientForm({ ...ingredientForm, min_alert_level: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '8px 12px',
+                      borderRadius: 'var(--radius-sm)',
+                      background: 'var(--bg-surface-elevated)',
+                      border: '1px solid var(--border-medium)',
+                      color: 'var(--text-primary)',
+                      fontFamily: 'inherit'
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: 4 }}>
+                    Cost per Unit (₹/{ingredientForm.unit})
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    required
+                    placeholder="0.50"
+                    value={ingredientForm.cost_per_unit}
+                    onChange={e => setIngredientForm({ ...ingredientForm, cost_per_unit: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '8px 12px',
+                      borderRadius: 'var(--radius-sm)',
+                      background: 'var(--bg-surface-elevated)',
+                      border: '1px solid var(--border-medium)',
+                      color: 'var(--text-primary)',
+                      fontFamily: 'inherit',
+                      fontWeight: 700
+                    }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: 4 }}>
+                    Supplier (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Metro Wholesale"
+                    value={ingredientForm.supplier}
+                    onChange={e => setIngredientForm({ ...ingredientForm, supplier: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '8px 12px',
+                      borderRadius: 'var(--radius-sm)',
+                      background: 'var(--bg-surface-elevated)',
+                      border: '1px solid var(--border-medium)',
+                      color: 'var(--text-primary)',
+                      fontFamily: 'inherit'
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 10 }}>
+                <button type="button" onClick={() => setAddIngredientOpen(false)} className="btn btn-secondary btn-sm">
+                  Cancel
+                </button>
+                <button type="submit" className="btn btn-primary btn-sm">
+                  Save Ingredient
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Restock Modal */}
+      {restockOpen && selectedIngredient && (
+        <div className="modal-backdrop" onClick={() => setRestockOpen(false)}>
+          <div className="modal-card" onClick={e => e.stopPropagation()} style={{ maxWidth: 420, padding: 24 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+              <div>
+                <h3 style={{ fontSize: '1.2rem', fontWeight: 800 }}>Restock Raw Stock</h3>
+                <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                  {selectedIngredient.name} ({selectedIngredient.category})
+                </p>
+              </div>
+              <button onClick={() => setRestockOpen(false)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleRestock} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div style={{
+                background: 'var(--bg-surface-elevated)',
+                borderRadius: 'var(--radius-sm)',
+                padding: '12px 14px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                fontSize: '0.85rem'
+              }}>
+                <span style={{ color: 'var(--text-muted)' }}>Current Warehouse Stock:</span>
+                <strong style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-heading)' }}>
+                  {selectedIngredient.current_stock} {selectedIngredient.unit}
+                </strong>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: 4 }}>
+                  Quantity to Add ({selectedIngredient.unit})
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  min="0.1"
+                  required
+                  placeholder="500"
+                  value={restockQty}
+                  onChange={e => setRestockQty(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    borderRadius: 'var(--radius-sm)',
+                    background: 'var(--bg-surface-elevated)',
+                    border: '1px solid var(--accent-gold)',
+                    color: 'var(--text-primary)',
+                    fontFamily: 'inherit',
+                    fontSize: '1rem',
+                    fontWeight: 700
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: 4 }}>
+                  Batch / Purchase Order Notes
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. PO #891, Supplier invoice delivery"
+                  value={restockNotes}
+                  onChange={e => setRestockNotes(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '8px 12px',
+                    borderRadius: 'var(--radius-sm)',
+                    background: 'var(--bg-surface-elevated)',
+                    border: '1px solid var(--border-medium)',
+                    color: 'var(--text-primary)',
+                    fontFamily: 'inherit'
+                  }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 10 }}>
+                <button type="button" onClick={() => setRestockOpen(false)} className="btn btn-secondary btn-sm">
+                  Cancel
+                </button>
+                <button type="submit" className="btn btn-primary btn-sm">
+                  Confirm Restock
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Recipe (BOM) Modal */}
+      {recipeModalOpen && recipeItem && (
+        <div className="modal-backdrop" onClick={() => setRecipeModalOpen(false)}>
+          <div className="modal-card" onClick={e => e.stopPropagation()} style={{ maxWidth: 640, padding: 24 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <h3 style={{ fontSize: '1.25rem', fontWeight: 800 }}>Recipe Bill of Materials (BOM)</h3>
+                  <span style={{
+                    padding: '2px 8px',
+                    borderRadius: 4,
+                    background: 'rgba(212,175,55,0.15)',
+                    color: 'var(--accent-gold)',
+                    fontSize: '0.72rem',
+                    fontWeight: 700
+                  }}>
+                    {recipeItem.name}
+                  </span>
+                </div>
+                <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 2 }}>
+                  Map required raw materials for this dish. Orders automatically decrement these inventory quantities.
+                </p>
+              </div>
+              <button onClick={() => setRecipeModalOpen(false)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Price & Cost Comparison Banner */}
+            {(() => {
+              const totalRecipeCost = recipeIngredients.reduce((sum, r) => sum + (parseFloat(r.quantity || 0) * parseFloat(r.cost_per_unit || 0)), 0);
+              const dishPrice = parseFloat(recipeItem.price || 0);
+              const margin = dishPrice - totalRecipeCost;
+              const marginPct = dishPrice > 0 ? ((margin / dishPrice) * 100).toFixed(1) : 0;
+
+              return (
+                <div style={{
+                  background: 'var(--bg-surface-elevated)',
+                  borderRadius: 'var(--radius-sm)',
+                  padding: '12px 16px',
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(3, 1fr)',
+                  gap: 12,
+                  marginBottom: 18,
+                  border: '1px solid var(--border-subtle)',
+                  textAlign: 'center'
+                }}>
+                  <div>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Selling Price</div>
+                    <div style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-primary)' }}>₹{dishPrice.toFixed(2)}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Calibrated Food Cost</div>
+                    <div style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--accent-gold)' }}>₹{totalRecipeCost.toFixed(2)}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Projected Margin</div>
+                    <div style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--status-available)' }}>{marginPct}%</div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* List of Current Ingredients */}
+            <div style={{ marginBottom: 16 }}>
+              <h4 style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 8 }}>
+                Current Ingredients in Recipe ({recipeIngredients.length})
+              </h4>
+
+              {recipeIngredients.length === 0 ? (
+                <div style={{
+                  padding: '24px',
+                  textAlign: 'center',
+                  background: 'rgba(255,255,255,0.02)',
+                  borderRadius: 'var(--radius-sm)',
+                  border: '1px dashed var(--border-medium)',
+                  color: 'var(--text-muted)',
+                  fontSize: '0.82rem'
+                }}>
+                  No ingredients configured for this dish yet. Add raw materials below.
+                </div>
+              ) : (
+                <div style={{ maxHeight: 220, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {recipeIngredients.map((r, idx) => {
+                    const lineCost = (parseFloat(r.quantity || 0) * parseFloat(r.cost_per_unit || 0)).toFixed(2);
+                    return (
+                      <div
+                        key={idx}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '8px 12px',
+                          background: 'var(--bg-surface-elevated)',
+                          borderRadius: 'var(--radius-sm)',
+                          fontSize: '0.82rem',
+                          border: '1px solid var(--border-subtle)'
+                        }}
+                      >
+                        <div>
+                          <strong>{r.ingredient_name}</strong>
+                          <span style={{ color: 'var(--text-muted)', marginLeft: 8 }}>
+                            ({r.quantity} {r.ingredient_unit} @ ₹{r.cost_per_unit}/{r.ingredient_unit})
+                          </span>
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                          <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>₹{lineCost}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveRecipeIngredient(idx)}
+                            style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                            title="Remove from recipe"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Add Ingredient to Recipe Bar */}
+            <div style={{
+              background: 'rgba(255,255,255,0.02)',
+              border: '1px solid var(--border-medium)',
+              borderRadius: 'var(--radius-sm)',
+              padding: '12px',
+              marginBottom: 20
+            }}>
+              <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: 8, fontWeight: 600 }}>
+                + Add Ingredient to BOM
+              </label>
+
+              <div style={{ display: 'flex', gap: 8 }}>
+                <select
+                  value={selectedIngredientToAdd}
+                  onChange={e => setSelectedIngredientToAdd(e.target.value)}
+                  style={{
+                    flex: 2,
+                    padding: '8px 10px',
+                    borderRadius: 'var(--radius-sm)',
+                    background: 'var(--bg-surface-elevated)',
+                    border: '1px solid var(--border-medium)',
+                    color: 'var(--text-primary)',
+                    fontFamily: 'inherit',
+                    fontSize: '0.82rem'
+                  }}
+                >
+                  <option value="">Select ingredient from warehouse...</option>
+                  {inventoryData.ingredients?.map(ing => (
+                    <option key={ing.id} value={ing.id}>
+                      {ing.name} ({ing.unit}) - ₹{ing.cost_per_unit}/{ing.unit} [Stock: {ing.current_stock}]
+                    </option>
+                  ))}
+                </select>
+
+                <input
+                  type="number"
+                  step="any"
+                  min="0.01"
+                  placeholder="Qty"
+                  value={ingredientQtyToAdd}
+                  onChange={e => setIngredientQtyToAdd(e.target.value)}
+                  style={{
+                    flex: 1,
+                    padding: '8px 10px',
+                    borderRadius: 'var(--radius-sm)',
+                    background: 'var(--bg-surface-elevated)',
+                    border: '1px solid var(--border-medium)',
+                    color: 'var(--text-primary)',
+                    fontFamily: 'inherit',
+                    fontSize: '0.82rem'
+                  }}
+                />
+
+                <button
+                  type="button"
+                  onClick={handleAddRecipeIngredient}
+                  className="btn btn-secondary btn-sm"
+                  style={{ whiteSpace: 'nowrap' }}
+                >
+                  Add
+                </button>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+              <button type="button" onClick={() => setRecipeModalOpen(false)} className="btn btn-secondary btn-sm">
+                Cancel
+              </button>
+              <button type="button" onClick={handleSaveRecipe} className="btn btn-primary btn-sm">
+                Save Recipe & Recalibrate Food Cost
+              </button>
+            </div>
           </div>
         </div>
       )}

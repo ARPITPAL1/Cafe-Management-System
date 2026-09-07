@@ -11,36 +11,6 @@ from orders.models import Order, OrderItem
 from billing.models import Bill, Payment
 from customers.models import Customer, CustomerOTP, Feedback
 
-def check_admin_password(request):
-    """
-    Validates that request includes a valid admin password in X-Admin-Password header
-    or data payload.
-    """
-    pw = (
-        request.headers.get('X-Admin-Password')
-        or request.META.get('HTTP_X_ADMIN_PASSWORD')
-        or (hasattr(request, 'data') and isinstance(request.data, dict) and request.data.get('admin_password'))
-        or ''
-    )
-    if pw in ['admin123', 'cafe1234', 'owner123']:
-        return True
-    owner_user = User.objects.filter(staff_profile__role='OWNER').first()
-    if owner_user and owner_user.check_password(pw):
-        return True
-    return False
-
-@api_view(['POST'])
-def verify_admin_password_view(request):
-    """
-    Endpoint for verifying Admin password before granting edit mode.
-    """
-    if check_admin_password(request):
-        return Response({'valid': True, 'message': 'Admin password verified successfully.'})
-    return Response(
-        {'valid': False, 'error': 'Invalid Admin/Owner password. Editing is restricted on this live demo.'}, 
-        status=status.HTTP_401_UNAUTHORIZED
-    )
-
 @api_view(['GET', 'PUT', 'PATCH'])
 def cafe_profile_view(request):
     profile = CafeProfile.objects.first()
@@ -48,11 +18,6 @@ def cafe_profile_view(request):
         profile = CafeProfile.objects.create()
     
     if request.method in ['PUT', 'PATCH']:
-        if not check_admin_password(request):
-            return Response(
-                {'error': 'Admin password required to modify cafe profile.'},
-                status=status.HTTP_403_FORBIDDEN
-            )
         serializer = CafeProfileSerializer(profile, data=request.data, partial=True)
         if serializer.is_valid():
             serializer.save()
@@ -264,9 +229,6 @@ def owner_manage_staff_view(request):
     """
     Owner Staff Management: Add new staff, update emails, roles, phone, or reset passwords.
     """
-    if not check_admin_password(request):
-        return Response({'error': 'Admin password required to manage staff accounts.'}, status=status.HTTP_403_FORBIDDEN)
-
     data = request.data
     action = data.get('action', 'update')
     operator = data.get('operator_name', 'Owner')
@@ -374,9 +336,6 @@ def owner_reset_data_view(request):
     """
     Owner System Data Reset: Close table sessions, purge test orders, or clean-slate factory reset.
     """
-    if not check_admin_password(request):
-        return Response({'error': 'Admin password required to reset data.'}, status=status.HTTP_403_FORBIDDEN)
-
     action = request.data.get('action')
     operator = request.data.get('operator_name', 'Owner')
 
@@ -472,9 +431,6 @@ def owner_master_update_view(request):
     Comprehensive Master Form Submission for Owner:
     Updates Cafe Identity, Invoicing, Staff credentials, and Messaging settings in a single atomic transaction.
     """
-    if not check_admin_password(request):
-        return Response({'error': 'Admin password required to update master configurations.'}, status=status.HTTP_403_FORBIDDEN)
-
     data = request.data
     operator = data.get('operator_name', 'Owner')
 

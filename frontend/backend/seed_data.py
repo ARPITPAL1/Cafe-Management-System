@@ -399,9 +399,115 @@ def run_seed():
         details='Order #1048 (Table 12) accepted in Kitchen'
     )
 
+    # -----------------------------------------------------------------------
+    # 7. Coupons & Promotions
+    # -----------------------------------------------------------------------
+    from billing.models import Coupon, CashierShift, PettyCashExpense
+    from menu.models import Ingredient, RecipeItem, StockAdjustmentLog
+
+    coupons_data = [
+        ('WELCOME10', '10% Off for New Diners', 'PERCENT', Decimal('10.00'), Decimal('200.00'), Decimal('150.00')),
+        ('FLAT50', 'Flat ₹50 Off on Bistro Specials', 'FLAT', Decimal('50.00'), Decimal('350.00'), Decimal('50.00')),
+        ('CAFEVIP', '15% Off VIP Dining Pass', 'PERCENT', Decimal('15.00'), Decimal('500.00'), Decimal('300.00')),
+    ]
+    for code, desc, d_type, val, min_o, max_d in coupons_data:
+        Coupon.objects.get_or_create(
+            code=code,
+            defaults={
+                'description': desc,
+                'discount_type': d_type,
+                'discount_value': val,
+                'min_order_amount': min_o,
+                'max_discount_amount': max_d,
+                'is_active': True
+            }
+        )
+    print(f"[OK] Seeded {Coupon.objects.count()} active coupons")
+
+    # -----------------------------------------------------------------------
+    # 8. Raw Material Inventory Ingredients & BOM Recipes
+    # -----------------------------------------------------------------------
+    ingredients_seed = [
+        ('Espresso Coffee Beans (Arabica)', 'Coffee', 'g', Decimal('8500.00'), Decimal('2000.00'), Decimal('0.8500'), 'Blue Tokai Roasters'),
+        ('Whole Organic Milk', 'Dairy', 'ml', Decimal('16000.00'), Decimal('3000.00'), Decimal('0.0750'), 'Amul Gold Dairy'),
+        ('Oat Milk Barista Edition', 'Dairy', 'ml', Decimal('4500.00'), Decimal('1200.00'), Decimal('0.2400'), 'Oatly India'),
+        ('Fior Di Latte Mozzarella', 'Dairy', 'g', Decimal('3200.00'), Decimal('800.00'), Decimal('0.9500'), 'Artisan Fromagerie'),
+        ('San Marzano Pizza Sauce', 'Produce', 'g', Decimal('5500.00'), Decimal('1000.00'), Decimal('0.3500'), 'Gustoso Imports'),
+        ('Artisanal Pizza Doughball', 'Bakery', 'pcs', Decimal('42.00'), Decimal('10.00'), Decimal('22.0000'), 'In-House Bakery'),
+        ('French Butter (Lactic)', 'Dairy', 'g', Decimal('2200.00'), Decimal('500.00'), Decimal('0.6000'), 'President Dairy'),
+        ('Fresh Hydroponic Mint Leaves', 'Produce', 'g', Decimal('180.00'), Decimal('300.00'), Decimal('0.2000'), 'Green Leaf Farms'), # Low stock trigger!
+    ]
+
+    for name, cat, unit, cur_stock, min_lvl, cpu, supp in ingredients_seed:
+        ing, created = Ingredient.objects.get_or_create(
+            name=name,
+            defaults={
+                'category': cat,
+                'unit': unit,
+                'current_stock': cur_stock,
+                'min_alert_level': min_lvl,
+                'cost_per_unit': cpu,
+                'supplier': supp
+            }
+        )
+        if created:
+            StockAdjustmentLog.objects.create(
+                ingredient=ing,
+                change_type='RESTOCK',
+                quantity=cur_stock,
+                stock_after=cur_stock,
+                reference='Opening Inventory Batch',
+                notes='Initial stock balance',
+                performed_by='Inventory Head'
+            )
+    print(f"[OK] Seeded {Ingredient.objects.count()} raw material ingredients")
+
+    # Bind Recipes to flagship items
+    coffee_beans = Ingredient.objects.filter(name__contains='Coffee Beans').first()
+    milk = Ingredient.objects.filter(name__contains='Whole Organic Milk').first()
+    dough = Ingredient.objects.filter(name__contains='Doughball').first()
+    sauce = Ingredient.objects.filter(name__contains='Pizza Sauce').first()
+    cheese = Ingredient.objects.filter(name__contains='Mozzarella').first()
+
+    cappuccino = MenuItem.objects.filter(name__icontains='Cappuccino').first()
+    if cappuccino and coffee_beans and milk:
+        RecipeItem.objects.get_or_create(menu_item=cappuccino, ingredient=coffee_beans, defaults={'quantity': Decimal('18.00')})
+        RecipeItem.objects.get_or_create(menu_item=cappuccino, ingredient=milk, defaults={'quantity': Decimal('220.00')})
+
+    pizza = MenuItem.objects.filter(name__icontains='Margherita').first()
+    if pizza and dough and sauce and cheese:
+        RecipeItem.objects.get_or_create(menu_item=pizza, ingredient=dough, defaults={'quantity': Decimal('1.00')})
+        RecipeItem.objects.get_or_create(menu_item=pizza, ingredient=sauce, defaults={'quantity': Decimal('120.00')})
+        RecipeItem.objects.get_or_create(menu_item=pizza, ingredient=cheese, defaults={'quantity': Decimal('140.00')})
+    print("[OK] Flagship menu items linked with Bill of Materials (BOM) recipes")
+
+    # -----------------------------------------------------------------------
+    # 9. Cashier Shift & Petty Cash
+    # -----------------------------------------------------------------------
+    cashier_user = User.objects.filter(username='cashier').first()
+    active_shift, _ = CashierShift.objects.get_or_create(
+        shift_number=1,
+        defaults={
+            'cashier_name': 'Sunil Mehta',
+            'cashier_user': cashier_user,
+            'status': 'OPEN',
+            'opening_float': Decimal('2000.00'),
+            'notes': 'Morning shift started on main register'
+        }
+    )
+    PettyCashExpense.objects.get_or_create(
+        shift=active_shift,
+        reason='Emergency fresh mint leaves from local market',
+        defaults={
+            'amount': Decimal('150.00'),
+            'approved_by': 'Kavita Roy (Manager)'
+        }
+    )
+    print(f"[OK] Cashier Shift #1 is OPEN with Rs. 2,000 float and Rs. 150 petty cash logged")
+
     print("\n[SUCCESS] Database seeding completed successfully!")
     print("--------------------------------------------------")
-    print(f"Tables: {Table.objects.count()} | Menu: {MenuItem.objects.count()} | Customers: {Customer.objects.count()}")
+    print(f"Tables: {Table.objects.count()} | Menu: {MenuItem.objects.count()} | Ingredients: {Ingredient.objects.count()} | Coupons: {Coupon.objects.count()}")
     print("Table 12 is active with Order #1048 ready for live demonstration!")
     print("--------------------------------------------------\n")
 

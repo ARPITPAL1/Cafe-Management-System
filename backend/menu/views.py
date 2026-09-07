@@ -4,7 +4,6 @@ from rest_framework.response import Response
 from .models import Category, MenuItem, MenuItemVariant, MenuAddon
 from .serializers import CategorySerializer, MenuItemSerializer, MenuItemVariantSerializer, MenuAddonSerializer
 from core.models import AuditLog
-from core.views import check_admin_password
 
 @api_view(['GET'])
 def menu_full_catalog_view(request):
@@ -33,9 +32,6 @@ def category_list_create_view(request):
         return Response(CategorySerializer(categories, many=True).data)
 
     if request.method == 'POST':
-        if not check_admin_password(request):
-            return Response({'error': 'Admin password required to create category.'}, status=status.HTTP_403_FORBIDDEN)
-
         serializer = CategorySerializer(data=request.data)
         if serializer.is_valid():
             cat = serializer.save()
@@ -57,9 +53,6 @@ def menu_item_list_create_view(request):
         return Response(MenuItemSerializer(items, many=True).data)
 
     if request.method == 'POST':
-        if not check_admin_password(request):
-            return Response({'error': 'Admin password required to add menu item.'}, status=status.HTTP_403_FORBIDDEN)
-
         serializer = MenuItemSerializer(data=request.data)
         if serializer.is_valid():
             item = serializer.save()
@@ -83,10 +76,6 @@ def menu_item_detail_view(request, pk):
 
     if request.method == 'GET':
         return Response(MenuItemSerializer(item).data)
-
-    if request.method in ['PATCH', 'DELETE', 'PUT']:
-        if not check_admin_password(request):
-            return Response({'error': 'Admin password required to modify or delete menu items.'}, status=status.HTTP_403_FORBIDDEN)
 
     if request.method == 'PATCH':
         serializer = MenuItemSerializer(item, data=request.data, partial=True)
@@ -118,9 +107,6 @@ def menu_item_detail_view(request, pk):
 
 @api_view(['POST'])
 def menu_item_toggle_stock_view(request, pk):
-    if not check_admin_password(request):
-        return Response({'error': 'Admin password required to toggle item availability.'}, status=status.HTTP_403_FORBIDDEN)
-
     try:
         item = MenuItem.objects.get(pk=pk)
     except MenuItem.DoesNotExist:
@@ -145,3 +131,175 @@ def menu_item_toggle_stock_view(request, pk):
         'is_available': item.is_available,
         'message': f"'{item.name}' marked as {status_str}"
     })
+
+
+# ---------------------------------------------------------------------------
+# RAW MATERIAL INVENTORY & BILL OF MATERIALS (BOM) RECIPES
+# ---------------------------------------------------------------------------
+
+from decimal import Decimal
+from .models import Ingredient, RecipeItem, StockAdjustmentLog
+from .serializers import IngredientSerializer, RecipeItemSerializer, StockAdjustmentLogSerializer
+
+@api_view(['GET', 'POST'])
+def ingredients_list_create_view(request):
+    """
+    Lists all raw material inventory ingredients or registers a new ingredient.
+    """
+    if request.method == 'GET':
+        ingredients = Ingredient.objects.all()
+        serializer = IngredientSerializer(ingredients, many=True)
+        low_stock_count = sum(1 for i in ingredients if i.is_low_stock)
+        out_of_stock_count = sum(1 for i in ingredients if i.is_out_of_stock)
+        return Response({
+            'ingredients': serializer.data,
+            'low_stock_count': low_stock_count,
+            'out_of_stock_count': out_of_stock_count,
+            'total_count': len(ingredients)
+        })
+
+    if request.method == 'POST':
+        serializer = IngredientSerializer(data=request.data)
+        if serializer.is_valid():
+            ingredient = serializer.save()
+            StockAdjustmentLog.objects.create(
+                ingredient=ingredient,
+                change_type='RESTOCK',
+                quantity=ingredient.current_stock,
+                stock_after=ingredient.current_stock,
+                reference='Initial Stock',
+                notes='Initial stock on creation',
+                performed_by=request.data.get('user_name', 'Manager')
+            )
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['GET', 'PATCH', 'DELETE'])
+def ingredient_detail_view(request, pk):
+    try:
+        ingredient = Ingredient.objects.get(pk=pk)
+    except Ingredient.DoesNotExist:
+        return Response({'error': 'Ingredient not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    if request.method == 'GET':
+        logs = ingredient.adjustments.all()[:20]
+        return Response({
+            'ingredient': IngredientSerializer(ingredient).data,
+            'recent_logs': StockAdjustmentLogSerializer(logs, many=True).data
+        })
+
+    if request.method == 'PATCH':
+        serializer = IngredientSerializer(ingredient, data=request.data, partial=True)
+        if serializer.is_valid():
+            updated = serializer.save()
+            return Response(IngredientSerializer(updated).data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    if request.method == 'DELETE':
+        ingredient.delete()
+        return Response({'message': 'Ingredient deleted successfully'})
+
+
+@api_view(['POST'])
+def ingredient_restock_view(request, pk):
+    """
+    Inward stock purchase / restock.
+    """
+    try:
+        ingredient = Ingredient.objects.get(pk=pk)
+    except Ingredient.DoesNotExist:
+        return Response({'error': 'Ingredient not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    added_quantity = Decimal(str(request.data.get('quantity', 0.00)))
+    if added_quantity <= Decimal('0.00'):
+        return Response({'error': 'Restock quantity must be greater than 0'}, status=status.HTTP_400_BAD_REQUEST)
+
+    supplier = request.data.get('supplier', ingredient.supplier)
+    reference = request.data.get('reference', 'Purchase Inward')
+    notes = request.data.get('notes', '')
+    user_name = request.data.get('user_name', 'Manager')
+
+    new_stock = ingredient.current_stock + added_quantity
+    ingredient.current_stock = new_stock
+    if supplier:
+        ingredient.supplier = supplier
+    ingredient.save()
+
+    log = StockAdjustmentLog.objects.create(
+        ingredient=ingredient,
+        change_type='RESTOCK',
+        quantity=added_quantity,
+        stock_after=new_stock,
+        reference=reference,
+        notes=notes,
+        performed_by=user_name
+    )
+
+    AuditLog.objects.create(
+        user_name=user_name,
+        role='MANAGER',
+        action='Restocked Ingredient',
+        entity_type='Ingredient',
+        entity_id=str(ingredient.id),
+        details=f"Added +{added_quantity} {ingredient.unit} to '{ingredient.name}'. New stock: {new_stock} {ingredient.unit}"
+    )
+
+    return Response({
+        'message': f"Successfully added {added_quantity} {ingredient.unit} to {ingredient.name}! 📦",
+        'ingredient': IngredientSerializer(ingredient).data
+    })
+
+
+@api_view(['GET', 'POST'])
+def menu_item_recipe_view(request, pk):
+    """
+    Gets or binds raw material recipe ingredients (Bill of Materials) to a MenuItem.
+    """
+    try:
+        item = MenuItem.objects.get(pk=pk)
+    except MenuItem.DoesNotExist:
+        return Response({'error': 'Menu Item not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    if request.method == 'GET':
+        recipe_items = item.recipe_items.select_related('ingredient').all()
+        return Response({
+            'item_id': item.id,
+            'item_name': item.name,
+            'recipe_items': RecipeItemSerializer(recipe_items, many=True).data,
+            'calculated_food_cost': sum(r.estimated_cost for r in recipe_items)
+        })
+
+    if request.method == 'POST':
+        # items array: [{'ingredient_id': 1, 'quantity': 18.0}, ...]
+        ingredients_payload = request.data.get('ingredients', [])
+        item.recipe_items.all().delete()
+
+        total_recipe_cost = Decimal('0.00')
+        for rec in ingredients_payload:
+            ing_id = rec.get('ingredient_id')
+            qty = Decimal(str(rec.get('quantity', 0.00)))
+            if ing_id and qty > 0:
+                try:
+                    ingredient = Ingredient.objects.get(pk=ing_id)
+                    RecipeItem.objects.create(
+                        menu_item=item,
+                        ingredient=ingredient,
+                        quantity=qty
+                    )
+                    total_recipe_cost += qty * ingredient.cost_per_unit
+                except Ingredient.DoesNotExist:
+                    pass
+
+        # Auto-update the dish food_cost based on actual recipe
+        if total_recipe_cost > Decimal('0.00'):
+            item.food_cost = round(total_recipe_cost, 2)
+            item.save(update_fields=['food_cost', 'updated_at'])
+
+        recipe_items = item.recipe_items.select_related('ingredient').all()
+        return Response({
+            'message': f"Recipe updated for '{item.name}'! Food cost recalibrated to ₹{item.food_cost} 🥗",
+            'item': MenuItemSerializer(item).data,
+            'recipe_items': RecipeItemSerializer(recipe_items, many=True).data
+        })
+

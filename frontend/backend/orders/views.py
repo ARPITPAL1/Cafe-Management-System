@@ -1,5 +1,6 @@
 import random
 import string
+from decimal import Decimal
 from django.db import transaction
 from django.utils import timezone
 from rest_framework import status
@@ -8,7 +9,7 @@ from rest_framework.response import Response
 from .models import Order, OrderItem, OrderStatusHistory
 from .serializers import OrderSerializer, OrderItemSerializer
 from tables.models import Table, TableSession
-from menu.models import MenuItem
+from menu.models import MenuItem, StockAdjustmentLog
 from customers.models import Customer
 from core.models import AuditLog
 
@@ -143,6 +144,22 @@ def order_list_create_view(request):
                     special_instructions=instructions,
                     status='PENDING'
                 )
+
+                # Automatic inventory deduction via recipe Bill of Materials (BOM)
+                for recipe in m_item.recipe_items.select_related('ingredient').all():
+                    ing = recipe.ingredient
+                    used_qty = recipe.quantity * Decimal(str(qty))
+                    ing.current_stock = max(Decimal('0.00'), ing.current_stock - used_qty)
+                    ing.save(update_fields=['current_stock', 'updated_at'])
+                    StockAdjustmentLog.objects.create(
+                        ingredient=ing,
+                        change_type='ORDER_CONSUMED',
+                        quantity=-used_qty,
+                        stock_after=ing.current_stock,
+                        reference=f"Order #{order.order_number}",
+                        notes=f"Auto-deducted {used_qty} {ing.unit} for {qty}x {m_item.name}",
+                        performed_by='Kitchen Engine'
+                    )
 
             # Update table status
             table.status = 'PREPARING'
@@ -280,6 +297,22 @@ def order_add_items_view(request, pk):
         )
         created_items.append(f"{qty}x {m_item.name}")
 
+        # Automatic inventory deduction via recipe Bill of Materials (BOM)
+        for recipe in m_item.recipe_items.select_related('ingredient').all():
+            ing = recipe.ingredient
+            used_qty = recipe.quantity * Decimal(str(qty))
+            ing.current_stock = max(Decimal('0.00'), ing.current_stock - used_qty)
+            ing.save(update_fields=['current_stock', 'updated_at'])
+            StockAdjustmentLog.objects.create(
+                ingredient=ing,
+                change_type='ORDER_CONSUMED',
+                quantity=-used_qty,
+                stock_after=ing.current_stock,
+                reference=f"Order #{order.order_number}",
+                notes=f"Auto-deducted {used_qty} {ing.unit} for added {qty}x {m_item.name}",
+                performed_by='Kitchen Engine'
+            )
+
     order.session.table.status = 'PREPARING'
     order.session.table.save(update_fields=['status'])
 
@@ -346,3 +379,39 @@ def kitchen_display_view(request):
 
     serializer = OrderSerializer(orders, many=True)
     return Response(serializer.data)
+
+
+@api_view(['GET'])
+def delta_sync_view(request):
+    """
+    Sub-second delta synchronization endpoint for KDS, Tables, and Live Orders.
+    Returns changed orders, table statuses, and waiter calls since 'since' timestamp.
+    """
+    since_str = request.GET.get('since')
+    now = timezone.now()
+
+    orders_qs = Order.objects.select_related('session__table', 'customer').prefetch_related('items__menu_item')
+    tables_qs = Table.objects.filter(is_active=True)
+
+    if since_str:
+        try:
+            from datetime import datetime
+            # Parse ISO or standard timestamp
+            clean_str = since_str.replace('Z', '+00:00')
+            since_dt = datetime.fromisoformat(clean_str)
+            orders_qs = orders_qs.filter(updated_at__gte=since_dt)
+            tables_qs = tables_qs.filter(updated_at__gte=since_dt)
+        except Exception:
+            pass
+
+    return Response({
+        'server_time': now.isoformat(),
+        'updated_orders': OrderSerializer(orders_qs[:50], many=True).data,
+        'waiter_calls': [
+            {'table_id': t.id, 'table_number': t.number, 'called_at': t.waiter_called_at}
+            for t in Table.objects.filter(waiter_called=True)
+        ],
+        'pending_kds_count': Order.objects.filter(status__in=['PLACED', 'CONFIRMED', 'PREPARING']).count(),
+        'active_tables_count': Table.objects.filter(status__in=['OCCUPIED', 'ORDERING', 'PREPARING', 'SERVED', 'BILL_REQUESTED']).count()
+    })
+

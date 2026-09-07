@@ -1,5 +1,36 @@
 from rest_framework import serializers
-from .models import Bill, Payment
+from .models import Bill, Payment, Coupon, CashierShift, PettyCashExpense
+
+class CouponSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Coupon
+        fields = '__all__'
+
+class PettyCashExpenseSerializer(serializers.ModelSerializer):
+    created_display = serializers.SerializerMethodField()
+
+    class Meta:
+        model = PettyCashExpense
+        fields = '__all__'
+
+    def get_created_display(self, obj):
+        return obj.created_at.strftime('%I:%M %p')
+
+class CashierShiftSerializer(serializers.ModelSerializer):
+    expenses = PettyCashExpenseSerializer(many=True, read_only=True)
+    total_petty_cash = serializers.FloatField(read_only=True)
+    opened_display = serializers.SerializerMethodField()
+    closed_display = serializers.SerializerMethodField()
+
+    class Meta:
+        model = CashierShift
+        fields = '__all__'
+
+    def get_opened_display(self, obj):
+        return obj.opened_at.strftime('%d %b %Y, %I:%M %p') if obj.opened_at else ''
+
+    def get_closed_display(self, obj):
+        return obj.closed_at.strftime('%d %b %Y, %I:%M %p') if obj.closed_at else ''
 
 class PaymentSerializer(serializers.ModelSerializer):
     method_display = serializers.CharField(source='get_method_display', read_only=True)

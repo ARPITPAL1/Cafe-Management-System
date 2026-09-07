@@ -5,10 +5,8 @@ const API_BASE = (rawApi && !rawApi.includes('<') && !rawApi.includes('your-back
 
 async function request(endpoint, options = {}) {
   const url = `${API_BASE}${endpoint}`;
-  const adminPassword = sessionStorage.getItem('cafe_admin_edit_password') || localStorage.getItem('cafe_admin_edit_password') || '';
   const headers = {
     'Content-Type': 'application/json',
-    ...(adminPassword ? { 'X-Admin-Password': adminPassword } : {}),
     ...options.headers,
   };
 
@@ -31,7 +29,6 @@ export const api = {
   // Core & Auth
   getCafeProfile: () => request('/core/cafe/'),
   updateCafeProfile: (data) => request('/core/cafe/', { method: 'PUT', body: JSON.stringify(data) }),
-  verifyAdminPassword: (password) => request('/core/verify-admin/', { method: 'POST', body: JSON.stringify({ password }) }),
   staffLogin: (data) => request('/core/login/', { method: 'POST', body: JSON.stringify(data) }),
   getStaffList: () => request('/core/staff/'),
   getAuditLogs: () => request('/core/audit-logs/'),
@@ -78,7 +75,7 @@ export const api = {
   deleteMenuItem: (id) => request(`/menu/items/${id}/`, { method: 'DELETE' }),
   toggleItemStock: (id) => request(`/menu/items/${id}/toggle-stock/`, { method: 'POST' }),
 
-  // Orders
+  // Orders & KDS
   getOrders: (params = '') => request(`/orders/${params ? '?' + params : ''}`),
   createOrder: (data) => request('/orders/', { method: 'POST', body: JSON.stringify(data) }),
   getOrderDetail: (id) => request(`/orders/${id}/`),
@@ -89,8 +86,18 @@ export const api = {
   cancelOrderItem: (itemId, reason, cancelledBy = 'Cashier') => 
     request(`/orders/items/${itemId}/cancel/`, { method: 'POST', body: JSON.stringify({ reason, cancelled_by: cancelledBy }) }),
   getKitchenOrders: () => request('/orders/kitchen/'),
+  getDeltaSync: (since = '') => request(`/orders/delta/${since ? '?since=' + encodeURIComponent(since) : ''}`),
 
-  // Billing
+  // Raw Material Inventory & BOM Recipes
+  getInventory: () => request('/menu/inventory/'),
+  addIngredient: (data) => request('/menu/inventory/', { method: 'POST', body: JSON.stringify(data) }),
+  updateIngredient: (id, data) => request(`/menu/inventory/${id}/`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteIngredient: (id) => request(`/menu/inventory/${id}/`, { method: 'DELETE' }),
+  restockIngredient: (id, data) => request(`/menu/inventory/${id}/restock/`, { method: 'POST', body: JSON.stringify(data) }),
+  getItemRecipe: (itemId) => request(`/menu/items/${itemId}/recipe/`),
+  saveItemRecipe: (itemId, ingredients) => request(`/menu/items/${itemId}/recipe/`, { method: 'POST', body: JSON.stringify({ ingredients }) }),
+
+  // Billing, Shifts & Z-Report
   getBillPreview: (sessionId) => request(`/billing/session/${sessionId}/preview/`),
   generateBill: (sessionId, data = {}) => request(`/billing/session/${sessionId}/generate/`, { method: 'POST', body: JSON.stringify(data) }),
   recordPayment: (billId, data) => request(`/billing/${billId}/payment/`, { method: 'POST', body: JSON.stringify(data) }),
@@ -99,6 +106,18 @@ export const api = {
     request(`/billing/session/${sessionId}/request-bill/`, { method: 'POST', body: JSON.stringify({ requested_by: requestedBy }) }),
   mergeBills: (sessionId, data = {}) =>
     request(`/billing/session/${sessionId}/merge-bills/`, { method: 'POST', body: JSON.stringify(data) }),
+
+  // Cashier Shifts & Z-Reports
+  getCurrentShift: () => request('/billing/shifts/current/'),
+  openShift: (data) => request('/billing/shifts/open/', { method: 'POST', body: JSON.stringify(data) }),
+  recordPettyCash: (data) => request('/billing/shifts/petty-cash/', { method: 'POST', body: JSON.stringify(data) }),
+  closeShift: (data) => request('/billing/shifts/close/', { method: 'POST', body: JSON.stringify(data) }),
+  getZReport: (shiftId) => request(`/billing/shifts/${shiftId}/z-report/`),
+  getShiftsList: () => request('/billing/shifts/'),
+
+  // Coupons & Promotions
+  getCoupons: () => request('/billing/coupons/'),
+  validateCoupon: (code, subtotal) => request('/billing/coupons/', { method: 'POST', body: JSON.stringify({ code, subtotal }) }),
 
   // Customers & OTP
   getCustomers: (search = '') => request(`/customers/${search ? '?search=' + encodeURIComponent(search) : ''}`),

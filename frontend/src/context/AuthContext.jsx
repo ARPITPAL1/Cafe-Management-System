@@ -1,6 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { api } from '../services/api';
-import AdminPasswordModal from '../components/AdminPasswordModal';
 
 const AuthContext = createContext(null);
 
@@ -17,54 +16,6 @@ export const AuthProvider = ({ children }) => {
   });
 
   const [cafeInfo, setCafeInfo] = useState(null);
-
-  // Admin Password Edit Protection
-  const [isEditUnlocked, setIsEditUnlocked] = useState(() => {
-    return Boolean(sessionStorage.getItem('cafe_admin_edit_password'));
-  });
-  const [authModalOpen, setAuthModalOpen] = useState(false);
-  const [actionDesc, setActionDesc] = useState('');
-  const [pendingCallback, setPendingCallback] = useState(null);
-
-  const unlockEditing = (password) => {
-    sessionStorage.setItem('cafe_admin_edit_password', password);
-    setIsEditUnlocked(true);
-  };
-
-  const lockEditing = () => {
-    sessionStorage.removeItem('cafe_admin_edit_password');
-    setIsEditUnlocked(false);
-  };
-
-  const requireAdminAuth = (callback, description = 'make changes') => {
-    // If already verified in this session, proceed immediately
-    const savedPw = sessionStorage.getItem('cafe_admin_edit_password');
-    if (savedPw || isEditUnlocked) {
-      setIsEditUnlocked(true);
-      if (typeof callback === 'function') callback();
-      return true;
-    }
-
-    // Prompt for password
-    setActionDesc(description);
-    setPendingCallback(() => callback);
-    setAuthModalOpen(true);
-    return false;
-  };
-
-  const handleModalSuccess = (password) => {
-    setIsEditUnlocked(true);
-    if (pendingCallback) {
-      const cb = pendingCallback;
-      setPendingCallback(null);
-      cb();
-    }
-  };
-
-  const handleModalClose = () => {
-    setAuthModalOpen(false);
-    setPendingCallback(null);
-  };
 
   const refreshCafeProfile = async () => {
     try {
@@ -133,39 +84,30 @@ export const AuthProvider = ({ children }) => {
   });
 
   const toggleWaiterCallAlerts = async (explicitVal = null) => {
-    const performToggle = async () => {
-      const nextVal = explicitVal !== null ? explicitVal : !waiterCallAlertsEnabled;
-      setWaiterCallAlertsEnabled(nextVal);
-      localStorage.setItem('staff_waiter_alerts_enabled', JSON.stringify(nextVal));
-      try {
-        await api.toggleWaiterAlerts(nextVal);
-        refreshCafeProfile();
-      } catch (e) {
-        console.log('Failed to sync waiter alerts toggle with backend', e);
-      }
-    };
-
-    requireAdminAuth(performToggle, 'toggle waiter alerts');
+    const nextVal = explicitVal !== null ? explicitVal : !waiterCallAlertsEnabled;
+    setWaiterCallAlertsEnabled(nextVal);
+    localStorage.setItem('staff_waiter_alerts_enabled', JSON.stringify(nextVal));
+    try {
+      await api.toggleWaiterAlerts(nextVal);
+      refreshCafeProfile();
+    } catch (e) {
+      console.log('Failed to sync waiter alerts toggle with backend', e);
+    }
   };
 
   const toggleAdvanceBooking = async (explicitVal = null) => {
-    return new Promise((resolve, reject) => {
-      requireAdminAuth(async () => {
-        try {
-          const res = await api.toggleAdvanceBooking(explicitVal);
-          refreshCafeProfile();
-          resolve(res);
-        } catch (e) {
-          console.error('Failed to toggle advance booking', e);
-          reject(e);
-        }
-      }, 'toggle advance table bookings');
-    });
+    try {
+      const res = await api.toggleAdvanceBooking(explicitVal);
+      refreshCafeProfile();
+      return res;
+    } catch (e) {
+      console.error('Failed to toggle advance booking', e);
+      throw e;
+    }
   };
 
   const logout = () => {
     localStorage.removeItem('cafe_staff_user');
-    lockEditing();
     loginAs('CASHIER');
   };
 
@@ -182,19 +124,9 @@ export const AuthProvider = ({ children }) => {
       toggleSoundAlerts,
       waiterCallAlertsEnabled,
       toggleWaiterCallAlerts,
-      toggleAdvanceBooking,
-      isEditUnlocked,
-      unlockEditing,
-      lockEditing,
-      requireAdminAuth
+      toggleAdvanceBooking
     }}>
       {children}
-      <AdminPasswordModal
-        isOpen={authModalOpen}
-        onClose={handleModalClose}
-        onSuccess={handleModalSuccess}
-        actionDescription={actionDesc}
-      />
     </AuthContext.Provider>
   );
 };

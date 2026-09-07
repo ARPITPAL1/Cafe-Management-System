@@ -33,7 +33,7 @@ import {
 } from 'lucide-react';
 
 export default function CafeSettings() {
-  const { cafeInfo, setCafeInfo, user, requireAdminAuth } = useAuth();
+  const { cafeInfo, setCafeInfo, user } = useAuth();
 
   // Active Navigation Tab: 'master' (Owner Master Suite), 'business' (General & Tax), 'whatsapp' (WhatsApp Gateway), 'audit' (Audit Trail)
   const [activeTab, setActiveTab] = useState('master');
@@ -170,99 +170,95 @@ export default function CafeSettings() {
   // Submit Master Form (Cafe Identity, Sender Mobile, Receipts, Staff Credentials)
   const handleMasterSubmit = async (e) => {
     if (e) e.preventDefault();
-    requireAdminAuth(async () => {
-      setIsSubmitting(true);
-      setErrorMessage('');
-      setSavedSuccess('');
+    setIsSubmitting(true);
+    setErrorMessage('');
+    setSavedSuccess('');
 
-      try {
-        // Pack staff edits
-        const staffAccountsPayload = Object.values(staffEdits).map(s => ({
-          id: s.id,
-          name: s.name,
-          email: s.email,
-          role: s.role,
-          phone: s.phone,
-          password: s.password || undefined, // only send if non-empty
-          is_active: s.is_active
+    try {
+      // Pack staff edits
+      const staffAccountsPayload = Object.values(staffEdits).map(s => ({
+        id: s.id,
+        name: s.name,
+        email: s.email,
+        role: s.role,
+        phone: s.phone,
+        password: s.password || undefined, // only send if non-empty
+        is_active: s.is_active
+      }));
+
+      const payload = {
+        ...formData,
+        operator_name: user?.name || 'Owner',
+        staff_accounts: staffAccountsPayload
+      };
+
+      const res = await api.ownerMasterUpdate(payload);
+
+      if (res.cafe) {
+        setCafeInfo(res.cafe);
+        setFormData(prev => ({
+          ...prev,
+          ...res.cafe
         }));
-
-        const payload = {
-          ...formData,
-          operator_name: user?.name || 'Owner',
-          staff_accounts: staffAccountsPayload
-        };
-
-        const res = await api.ownerMasterUpdate(payload);
-
-        if (res.cafe) {
-          setCafeInfo(res.cafe);
-          setFormData(prev => ({
-            ...prev,
-            ...res.cafe
-          }));
-        }
-
-        setSavedSuccess(res.message || 'All master configurations & credentials saved live! 🚀');
-        setTimeout(() => setSavedSuccess(''), 4500);
-
-        // Refresh staff and logs
-        const updatedStaff = await api.getStaffList();
-        setStaffList(updatedStaff);
-        // Clear entered passwords in state for security
-        const cleanEdits = {};
-        updatedStaff.forEach(s => {
-          cleanEdits[s.id] = {
-            id: s.id,
-            name: s.first_name || s.username || '',
-            email: s.email || '',
-            role: s.role || 'CASHIER',
-            phone: s.phone || '',
-            password: '',
-            is_active: s.is_active ?? true
-          };
-        });
-        setStaffEdits(cleanEdits);
-
-        api.getAuditLogs().then(setAuditLogs);
-      } catch (err) {
-        setErrorMessage(err.message || 'Failed to save master configurations');
-      } finally {
-        setIsSubmitting(false);
       }
-    }, 'save master configurations and credentials');
+
+      setSavedSuccess(res.message || 'All master configurations & credentials saved live! 🚀');
+      setTimeout(() => setSavedSuccess(''), 4500);
+
+      // Refresh staff and logs
+      const updatedStaff = await api.getStaffList();
+      setStaffList(updatedStaff);
+      // Clear entered passwords in state for security
+      const cleanEdits = {};
+      updatedStaff.forEach(s => {
+        cleanEdits[s.id] = {
+          id: s.id,
+          name: s.first_name || s.username || '',
+          email: s.email || '',
+          role: s.role || 'CASHIER',
+          phone: s.phone || '',
+          password: '',
+          is_active: s.is_active ?? true
+        };
+      });
+      setStaffEdits(cleanEdits);
+
+      api.getAuditLogs().then(setAuditLogs);
+    } catch (err) {
+      setErrorMessage(err.message || 'Failed to save master configurations');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // Quick single-staff credential update
   const handleSingleStaffUpdate = async (staffId) => {
     const edit = staffEdits[staffId];
     if (!edit) return;
-    requireAdminAuth(async () => {
-      setIsSubmitting(true);
-      try {
-        const res = await api.manageStaff({
-          action: 'update',
-          staff_id: staffId,
-          name: edit.name,
-          email: edit.email,
-          role: edit.role,
-          phone: edit.phone,
-          is_active: edit.is_active,
-          password: edit.password || undefined,
-          operator_name: user?.name || 'Owner'
-        });
-        setSavedSuccess(res.message || 'Staff updated successfully!');
-        setTimeout(() => setSavedSuccess(''), 3500);
-        handleStaffChange(staffId, 'password', '');
-        const updatedStaff = await api.getStaffList();
-        setStaffList(updatedStaff);
-        api.getAuditLogs().then(setAuditLogs);
-      } catch (err) {
-        alert('Error updating staff: ' + err.message);
-      } finally {
-        setIsSubmitting(false);
-      }
-    }, 'update staff account details');
+    setIsSubmitting(true);
+    try {
+      const res = await api.manageStaff({
+        action: 'update',
+        staff_id: staffId,
+        name: edit.name,
+        email: edit.email,
+        role: edit.role,
+        phone: edit.phone,
+        is_active: edit.is_active,
+        password: edit.password || undefined,
+        operator_name: user?.name || 'Owner'
+      });
+      setSavedSuccess(res.message || 'Staff updated successfully!');
+      setTimeout(() => setSavedSuccess(''), 3500);
+      handleStaffChange(staffId, 'password', '');
+      const updatedStaff = await api.getStaffList();
+      setStaffList(updatedStaff);
+      api.getAuditLogs().then(setAuditLogs);
+    } catch (err) {
+      alert('Error updating staff: ' + err.message);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // Add new staff member
@@ -272,55 +268,51 @@ export default function CafeSettings() {
       alert('Please provide staff name and email address.');
       return;
     }
-    requireAdminAuth(async () => {
-      setIsSubmitting(true);
-      try {
-        const res = await api.manageStaff({
-          action: 'create',
-          ...newStaffData,
-          operator_name: user?.name || 'Owner'
-        });
-        setSavedSuccess(res.message || 'New staff member added!');
-        setTimeout(() => setSavedSuccess(''), 3500);
-        setShowAddStaffModal(false);
-        setNewStaffData({
-          name: '',
-          email: '',
-          username: '',
-          role: 'CASHIER',
-          phone: '',
-          password: ''
-        });
-        const updatedStaff = await api.getStaffList();
-        setStaffList(updatedStaff);
-        loadData();
-      } catch (err) {
-        alert('Error adding staff: ' + err.message);
-      } finally {
-        setIsSubmitting(false);
-      }
-    }, 'add new staff account');
+    setIsSubmitting(true);
+    try {
+      const res = await api.manageStaff({
+        action: 'create',
+        ...newStaffData,
+        operator_name: user?.name || 'Owner'
+      });
+      setSavedSuccess(res.message || 'New staff member added!');
+      setTimeout(() => setSavedSuccess(''), 3500);
+      setShowAddStaffModal(false);
+      setNewStaffData({
+        name: '',
+        email: '',
+        username: '',
+        role: 'CASHIER',
+        phone: '',
+        password: ''
+      });
+      const updatedStaff = await api.getStaffList();
+      setStaffList(updatedStaff);
+      loadData();
+    } catch (err) {
+      alert('Error adding staff: ' + err.message);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // Delete staff member
   const handleDeleteStaff = async (staffId, staffName) => {
-    requireAdminAuth(async () => {
-      if (!window.confirm(`Are you sure you want to permanently remove staff account "${staffName}"?`)) {
-        return;
-      }
-      try {
-        await api.manageStaff({
-          action: 'delete',
-          staff_id: staffId,
-          operator_name: user?.name || 'Owner'
-        });
-        setSavedSuccess(`Staff account "${staffName}" deleted.`);
-        setTimeout(() => setSavedSuccess(''), 3500);
-        loadData();
-      } catch (err) {
-        alert('Error removing staff: ' + err.message);
-      }
-    }, 'delete staff account');
+    if (!window.confirm(`Are you sure you want to permanently remove staff account "${staffName}"?`)) {
+      return;
+    }
+    try {
+      await api.manageStaff({
+        action: 'delete',
+        staff_id: staffId,
+        operator_name: user?.name || 'Owner'
+      });
+      setSavedSuccess(`Staff account "${staffName}" deleted.`);
+      setTimeout(() => setSavedSuccess(''), 3500);
+      loadData();
+    } catch (err) {
+      alert('Error removing staff: ' + err.message);
+    }
   };
 
   // Open reset dialog
@@ -338,19 +330,17 @@ export default function CafeSettings() {
   const executeDataReset = async () => {
     const { action } = resetModal;
     setResetModal({ ...resetModal, isOpen: false });
-    requireAdminAuth(async () => {
-      setIsSubmitting(true);
-      try {
-        const res = await api.ownerResetData(action, user?.name || 'Owner');
-        setSavedSuccess(res.message || 'Operation completed successfully!');
-        setTimeout(() => setSavedSuccess(''), 5000);
-        api.getAuditLogs().then(setAuditLogs);
-      } catch (err) {
-        alert('Reset failed: ' + err.message);
-      } finally {
-        setIsSubmitting(false);
-      }
-    }, 'execute operational/factory system reset');
+    setIsSubmitting(true);
+    try {
+      const res = await api.ownerResetData(action, user?.name || 'Owner');
+      setSavedSuccess(res.message || 'Operation completed successfully!');
+      setTimeout(() => setSavedSuccess(''), 5000);
+      api.getAuditLogs().then(setAuditLogs);
+    } catch (err) {
+      alert('Reset failed: ' + err.message);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (

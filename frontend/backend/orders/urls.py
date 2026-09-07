@@ -6,10 +6,12 @@ from .views import (
     order_add_items_view,
     order_cancel_item_view,
     kitchen_display_view,
+    delta_sync_view,
 )
 
 urlpatterns = [
     path('', order_list_create_view, name='order_list_create'),
+    path('delta/', delta_sync_view, name='order_delta_sync'),
     path('<int:pk>/', order_detail_view, name='order_detail'),
     path('<int:pk>/status/', order_update_status_view, name='order_update_status'),
     path('<int:pk>/add-items/', order_add_items_view, name='order_add_items'),
