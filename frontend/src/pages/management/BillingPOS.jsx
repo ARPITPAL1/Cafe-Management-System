@@ -23,7 +23,7 @@ import {
 export default function BillingPOS() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { cafeInfo } = useAuth();
+  const { cafeInfo, requireAdminAuth } = useAuth();
 
   const [activeTables, setActiveTables] = useState([]);
   const [selectedSessionId, setSelectedSessionId] = useState(searchParams.get('session_id') || '');
@@ -96,18 +96,20 @@ export default function BillingPOS() {
 
   const handleGenerateBill = async () => {
     if (!selectedSessionId) return;
-    try {
-      const bill = await api.generateBill(selectedSessionId, {
-        discount_amount: discountAmount,
-        discount_reason: discountReason,
-        service_charge: serviceCharge,
-        cashier_name: 'Sunil Mehta (Cashier)'
-      });
-      fetchBillData(selectedSessionId);
-      fetchActiveTables();
-    } catch (err) {
-      alert('Error generating bill: ' + err.message);
-    }
+    requireAdminAuth(async () => {
+      try {
+        const bill = await api.generateBill(selectedSessionId, {
+          discount_amount: discountAmount,
+          discount_reason: discountReason,
+          service_charge: serviceCharge,
+          cashier_name: 'Sunil Mehta (Cashier)'
+        });
+        fetchBillData(selectedSessionId);
+        fetchActiveTables();
+      } catch (err) {
+        alert('Error generating bill: ' + err.message);
+      }
+    }, 'generate table bill');
   };
 
   const handleRecordPayment = async (e) => {
@@ -124,78 +126,84 @@ export default function BillingPOS() {
       return;
     }
 
-    setProcessingPay(true);
-    try {
-      const res = await api.recordPayment(currentBill.id, {
-        method: paymentMethod,
-        amount: amt,
-        reference_id: referenceId,
-        payer_name: payerName,
-        processed_by: 'Sunil Mehta (Cashier)'
-      });
+    requireAdminAuth(async () => {
+      setProcessingPay(true);
+      try {
+        const res = await api.recordPayment(currentBill.id, {
+          method: paymentMethod,
+          amount: amt,
+          reference_id: referenceId,
+          payer_name: payerName,
+          processed_by: 'Sunil Mehta (Cashier)'
+        });
 
-      // Clear input fields
-      setReferenceId('');
-      setPayerName('');
+        // Clear input fields
+        setReferenceId('');
+        setPayerName('');
 
-      // Refresh bill state
-      await fetchBillData(selectedSessionId);
-      await fetchActiveTables();
+        // Refresh bill state
+        await fetchBillData(selectedSessionId);
+        await fetchActiveTables();
 
-      // If fully settled, display receipt modal
-      if (res.bill?.status === 'PAID') {
-        setReceiptBill(res.bill);
+        // If fully settled, display receipt modal
+        if (res.bill?.status === 'PAID') {
+          setReceiptBill(res.bill);
+        }
+      } catch (err) {
+        alert('Error processing payment: ' + err.message);
+      } finally {
+        setProcessingPay(false);
       }
-    } catch (err) {
-      alert('Error processing payment: ' + err.message);
-    } finally {
-      setProcessingPay(false);
-    }
+    }, 'record payment and settle bill');
   };
 
   const handleCloseSession = async (customBill = null) => {
-    const targetSessionId = customBill?.session || selectedSessionId;
-    const tableObj = activeTables.find(t => t.active_session?.id?.toString() === targetSessionId?.toString());
-    const tableId = customBill?.table_id || tableObj?.id;
+    requireAdminAuth(async () => {
+      const targetSessionId = customBill?.session || selectedSessionId;
+      const tableObj = activeTables.find(t => t.active_session?.id?.toString() === targetSessionId?.toString());
+      const tableId = customBill?.table_id || tableObj?.id;
 
-    try {
-      if (tableId) {
-        await api.closeTableSession(tableId);
-      } else if (targetSessionId) {
-        await api.closeSession(targetSessionId);
-      } else {
-        alert('No active table or session selected to close.');
-        return;
+      try {
+        if (tableId) {
+          await api.closeTableSession(tableId);
+        } else if (targetSessionId) {
+          await api.closeSession(targetSessionId);
+        } else {
+          alert('No active table or session selected to close.');
+          return;
+        }
+        setReceiptBill(null);
+        setSelectedSessionId('');
+        setBillPreview(null);
+        await fetchActiveTables();
+        alert('Table session closed successfully and reset to AVAILABLE! ✨');
+      } catch (err) {
+        alert('Failed to close session: ' + err.message);
       }
-      setReceiptBill(null);
-      setSelectedSessionId('');
-      setBillPreview(null);
-      await fetchActiveTables();
-      alert('Table session closed successfully and reset to AVAILABLE! ✨');
-    } catch (err) {
-      alert('Failed to close session: ' + err.message);
-    }
+    }, 'close dining session and reset table');
   };
 
   const handleMergeBills = async () => {
     if (!selectedSessionId) return;
-    setMergingBills(true);
-    try {
-      const res = await api.mergeBills(selectedSessionId, {
-        discount_amount: discountAmount,
-        discount_reason: discountReason,
-        cashier_name: 'Cashier'
-      });
-      alert(res.message || 'Bills merged successfully! 🔀');
-      setShowGuestView(false);
-      setSelectedGuest(null);
-      await fetchBillData(selectedSessionId);
-      await fetchActiveTables();
-    } catch (err) {
-      alert('Error merging bills: ' + err.message);
-    } finally {
-      setMergingBills(false);
-    }
+    requireAdminAuth(async () => {
+      setMergingBills(true);
+      try {
+        const res = await api.mergeBills(selectedSessionId, {
+          discount_amount: discountAmount,
+          discount_reason: discountReason,
+          cashier_name: 'Cashier'
+        });
+        alert(res.message || 'Bills merged successfully! 🔀');
+        setShowGuestView(false);
+        setSelectedGuest(null);
+        await fetchBillData(selectedSessionId);
+        await fetchActiveTables();
+      } catch (err) {
+        alert('Error merging bills: ' + err.message);
+      } finally {
+        setMergingBills(false);
+      }
+    }, 'merge split bills');
   };
 
   return (

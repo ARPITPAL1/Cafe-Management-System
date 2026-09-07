@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
 import {
   Plus,
   Search,
@@ -18,6 +19,7 @@ import {
 } from 'lucide-react';
 
 export default function MenuManagement() {
+  const { requireAdminAuth } = useAuth();
   const [catalog, setCatalog] = useState({ categories: [], global_addons: [] });
   const [loading, setLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState('ALL');
@@ -25,7 +27,7 @@ export default function MenuManagement() {
   const [addDishOpen, setAddDishOpen] = useState(false);
   const [addCatOpen, setAddCatOpen] = useState(false);
 
-  // Form state
+  // Form State
   const [dishForm, setDishForm] = useState({
     name: '',
     category_id: '',
@@ -62,56 +64,62 @@ export default function MenuManagement() {
   }, []);
 
   const handleToggleStock = async (itemId) => {
-    try {
-      await api.toggleItemStock(itemId);
-      fetchMenu();
-    } catch (err) {
-      alert('Error updating availability: ' + err.message);
-    }
+    requireAdminAuth(async () => {
+      try {
+        await api.toggleItemStock(itemId);
+        fetchMenu();
+      } catch (err) {
+        alert('Error updating availability: ' + err.message);
+      }
+    }, 'change item stock availability');
   };
 
   const handleAddDish = async (e) => {
     e.preventDefault();
-    try {
-      await api.addMenuItem({
-        ...dishForm,
-        category: parseInt(dishForm.category_id),
-        price: parseFloat(dishForm.price),
-        food_cost: parseFloat(dishForm.food_cost || 0),
-        packaging_cost: parseFloat(dishForm.packaging_cost || 0)
-      });
-      setAddDishOpen(false);
-      setDishForm({
-        name: '',
-        category_id: catalog.categories[0]?.id || '',
-        description: '',
-        price: '',
-        food_cost: '',
-        packaging_cost: '5.00',
-        is_veg: true,
-        spice_level: 0,
-        prep_time_mins: 15,
-        is_bestseller: false,
-        is_recommended: false,
-        image_url: ''
-      });
-      fetchMenu();
-    } catch (err) {
-      alert('Failed to add dish: ' + err.message);
-    }
+    requireAdminAuth(async () => {
+      try {
+        await api.addMenuItem({
+          ...dishForm,
+          category: parseInt(dishForm.category_id),
+          price: parseFloat(dishForm.price),
+          food_cost: parseFloat(dishForm.food_cost || 0),
+          packaging_cost: parseFloat(dishForm.packaging_cost || 0)
+        });
+        setAddDishOpen(false);
+        setDishForm({
+          name: '',
+          category_id: catalog.categories[0]?.id || '',
+          description: '',
+          price: '',
+          food_cost: '',
+          packaging_cost: '5.00',
+          is_veg: true,
+          spice_level: 0,
+          prep_time_mins: 15,
+          is_bestseller: false,
+          is_recommended: false,
+          image_url: ''
+        });
+        fetchMenu();
+      } catch (err) {
+        alert('Failed to add dish: ' + err.message);
+      }
+    }, 'add new menu dish');
   };
 
   const handleAddCategory = async (e) => {
     e.preventDefault();
     if (!newCatName) return;
-    try {
-      await api.addCategory({ name: newCatName, display_order: catalog.categories.length + 1 });
-      setNewCatName('');
-      setAddCatOpen(false);
-      fetchMenu();
-    } catch (err) {
-      alert('Failed to add category: ' + err.message);
-    }
+    requireAdminAuth(async () => {
+      try {
+        await api.addCategory({ name: newCatName, display_order: catalog.categories.length + 1 });
+        setNewCatName('');
+        setAddCatOpen(false);
+        fetchMenu();
+      } catch (err) {
+        alert('Failed to add category: ' + err.message);
+      }
+    }, 'create menu category');
   };
 
   // Flatten items for listing

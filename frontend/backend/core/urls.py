@@ -7,7 +7,8 @@ from .views import (
     provision_cafe_view,
     owner_master_update_view,
     owner_manage_staff_view,
-    owner_reset_data_view
+    owner_reset_data_view,
+    verify_admin_password_view
 )
 
 urlpatterns = [
@@ -15,6 +16,7 @@ urlpatterns = [
     path('login/', staff_login_view, name='staff_login'),
     path('staff/', staff_list_view, name='staff_list'),
     path('audit-logs/', audit_logs_view, name='audit_logs'),
+    path('verify-admin/', verify_admin_password_view, name='verify_admin_password'),
     path('provision/', provision_cafe_view, name='provision_cafe'),
     path('owner/master-update/', owner_master_update_view, name='owner_master_update'),
     path('owner/manage-staff/', owner_manage_staff_view, name='owner_manage_staff'),

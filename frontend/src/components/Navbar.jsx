@@ -21,14 +21,24 @@ import {
   LogIn,
   ExternalLink,
   Sparkles,
-  Layers
+  Layers,
+  Lock
 } from 'lucide-react';
 import ReservationsManagementModal from './ReservationsManagementModal';
 import PreBookQRModal from './PreBookQRModal';
 import { api } from '../services/api';
 
 export default function Navbar() {
-  const { user, cafeInfo, loginAs, waiterCallAlertsEnabled, toggleWaiterCallAlerts } = useAuth();
+  const { 
+    user, 
+    cafeInfo, 
+    loginAs, 
+    waiterCallAlertsEnabled, 
+    toggleWaiterCallAlerts,
+    isEditUnlocked,
+    lockEditing,
+    requireAdminAuth
+  } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -173,6 +183,59 @@ export default function Navbar() {
 
           {/* Top Right User Profile / Role Switcher */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+            {/* View-Only vs Admin-Edit Mode Badge */}
+            {!isEditUnlocked ? (
+              <button
+                onClick={() => requireAdminAuth(() => {}, 'unlock admin edit mode')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  background: 'rgba(239, 68, 68, 0.12)',
+                  border: '1px solid rgba(239, 68, 68, 0.35)',
+                  color: '#ef4444',
+                  padding: '5px 11px',
+                  borderRadius: '20px',
+                  fontSize: '0.74rem',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease'
+                }}
+                title="Public View-Only Mode. Click to enter Admin Password and unlock editing."
+              >
+                <Lock size={12} />
+                <span>View-Only</span>
+                <span style={{ fontSize: '0.68rem', opacity: 0.85, textDecoration: 'underline' }}>Unlock</span>
+              </button>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 5,
+                  background: 'rgba(34, 197, 94, 0.15)',
+                  border: '1px solid rgba(34, 197, 94, 0.4)',
+                  color: '#22c55e',
+                  padding: '5px 11px',
+                  borderRadius: '20px',
+                  fontSize: '0.74rem',
+                  fontWeight: 700
+                }}>
+                  <ShieldCheck size={12} />
+                  <span>Admin Edit Active</span>
+                </span>
+                <button
+                  onClick={lockEditing}
+                  className="btn btn-secondary btn-sm"
+                  style={{ padding: '4px 8px', fontSize: '0.72rem', borderRadius: '12px' }}
+                  title="Lock editing back to View-Only mode"
+                >
+                  <Lock size={11} />
+                  <span>Lock</span>
+                </button>
+              </div>
+            )}
+
             {/* Quick Advance Bookings Badge indicator in navbar */}
             {['OWNER', 'MANAGER'].includes(user?.role || 'OWNER') && (
               <button
@@ -275,10 +338,17 @@ export default function Navbar() {
                     <button
                       key={item.role}
                       onClick={() => {
-                        loginAs(item.role);
-                        setRoleMenuOpen(false);
-                        if (item.role === 'KITCHEN') navigate('/admin/kitchen');
-                        else if (item.role === 'CASHIER') navigate('/admin/billing');
+                        if (['OWNER', 'MANAGER'].includes(item.role)) {
+                          requireAdminAuth(() => {
+                            loginAs(item.role);
+                            setRoleMenuOpen(false);
+                          }, `switch to ${item.label}`);
+                        } else {
+                          loginAs(item.role);
+                          setRoleMenuOpen(false);
+                          if (item.role === 'KITCHEN') navigate('/admin/kitchen');
+                          else if (item.role === 'CASHIER') navigate('/admin/billing');
+                        }
                       }}
                       style={{
                         width: '100%',

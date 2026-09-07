@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 
 export default function KitchenDisplay() {
-  const { soundAlertsEnabled, toggleSoundAlerts } = useAuth();
+  const { soundAlertsEnabled, toggleSoundAlerts, requireAdminAuth } = useAuth();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('ALL');
@@ -31,22 +31,22 @@ export default function KitchenDisplay() {
       osc.type = 'sine';
       osc.frequency.setValueAtTime(587.33, audioCtx.currentTime); // D5
       osc.frequency.setValueAtTime(880.00, audioCtx.currentTime + 0.15); // A5
-      gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.4);
+      gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.6);
       osc.connect(gain);
       gain.connect(audioCtx.destination);
       osc.start();
-      osc.stop(audioCtx.currentTime + 0.4);
+      osc.stop(audioCtx.currentTime + 0.6);
     } catch (e) {
-      console.log('Audio chime error:', e);
+      console.log('Audio API chime not allowed until user interaction', e);
     }
   };
 
   const fetchKitchenOrders = async () => {
     try {
-      const data = await api.getKitchenOrders();
+      const data = await api.getKitchenQueue();
       setOrders(data);
-      const hasDelayed = data.some(o => (o.elapsed_minutes >= 15 || o.is_delayed) && o.status !== 'READY');
+      const hasDelayed = data.some(o => (o.elapsed_minutes >= 15 || o.is_delayed) && !['READY', 'SERVED', 'COMPLETED'].includes(o.status));
       if (hasDelayed && soundAlertsEnabled) {
         playAlertChime();
       }
@@ -65,12 +65,14 @@ export default function KitchenDisplay() {
   }, [soundAlertsEnabled]);
 
   const handleUpdateStatus = async (orderId, newStatus) => {
-    try {
-      await api.updateOrderStatus(orderId, newStatus, 'Chef Vikram (Kitchen)');
-      fetchKitchenOrders();
-    } catch (err) {
-      alert('Error updating order status: ' + err.message);
-    }
+    requireAdminAuth(async () => {
+      try {
+        await api.updateOrderStatus(orderId, newStatus, 'Chef Vikram (Kitchen)');
+        fetchKitchenOrders();
+      } catch (err) {
+        alert('Error updating order status: ' + err.message);
+      }
+    }, `update kitchen ticket to ${newStatus}`);
   };
 
   const delayedOrders = orders.filter(o => (o.elapsed_minutes >= 15 || o.is_delayed) && !['READY', 'SERVED', 'COMPLETED'].includes(o.status));

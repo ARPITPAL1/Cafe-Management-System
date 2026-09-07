@@ -5,8 +5,10 @@ const API_BASE = (rawApi && !rawApi.includes('<') && !rawApi.includes('your-back
 
 async function request(endpoint, options = {}) {
   const url = `${API_BASE}${endpoint}`;
+  const adminPassword = sessionStorage.getItem('cafe_admin_edit_password') || localStorage.getItem('cafe_admin_edit_password') || '';
   const headers = {
     'Content-Type': 'application/json',
+    ...(adminPassword ? { 'X-Admin-Password': adminPassword } : {}),
     ...options.headers,
   };
 
@@ -29,6 +31,7 @@ export const api = {
   // Core & Auth
   getCafeProfile: () => request('/core/cafe/'),
   updateCafeProfile: (data) => request('/core/cafe/', { method: 'PUT', body: JSON.stringify(data) }),
+  verifyAdminPassword: (password) => request('/core/verify-admin/', { method: 'POST', body: JSON.stringify({ password }) }),
   staffLogin: (data) => request('/core/login/', { method: 'POST', body: JSON.stringify(data) }),
   getStaffList: () => request('/core/staff/'),
   getAuditLogs: () => request('/core/audit-logs/'),

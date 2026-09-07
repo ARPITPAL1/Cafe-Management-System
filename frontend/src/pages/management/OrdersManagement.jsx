@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
 import {
   UtensilsCrossed,
   Clock,
@@ -15,6 +16,7 @@ import {
 } from 'lucide-react';
 
 export default function OrdersManagement() {
+  const { requireAdminAuth } = useAuth();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('ALL');
@@ -65,23 +67,27 @@ export default function OrdersManagement() {
   }, []);
 
   const handleUpdateStatus = async (orderId, newStatus) => {
-    try {
-      await api.updateOrderStatus(orderId, newStatus, 'Staff Manager');
-      fetchOrders();
-    } catch (err) {
-      alert('Error updating status: ' + err.message);
-    }
+    requireAdminAuth(async () => {
+      try {
+        await api.updateOrderStatus(orderId, newStatus, 'Staff Manager');
+        fetchOrders();
+      } catch (err) {
+        alert('Error updating status: ' + err.message);
+      }
+    }, `update order status to ${newStatus}`);
   };
 
   const handleCancelItem = async (itemId, dishName) => {
-    const reason = prompt(`Enter cancellation reason for ${dishName}:`, 'Customer changed mind');
-    if (!reason) return;
-    try {
-      await api.cancelOrderItem(itemId, reason, 'Cashier');
-      fetchOrders();
-    } catch (err) {
-      alert('Error cancelling item: ' + err.message);
-    }
+    requireAdminAuth(async () => {
+      const reason = prompt(`Enter cancellation reason for ${dishName}:`, 'Customer changed mind');
+      if (!reason) return;
+      try {
+        await api.cancelOrderItem(itemId, reason, 'Cashier');
+        fetchOrders();
+      } catch (err) {
+        alert('Error cancelling item: ' + err.message);
+      }
+    }, 'cancel order item');
   };
 
   const handleAddManualItemRow = () => {
@@ -97,29 +103,31 @@ export default function OrdersManagement() {
       return;
     }
 
-    try {
-      await api.createOrder({
-        table_id: parseInt(manualTableId),
-        order_source: 'WAITER_MANUAL',
-        items: orderItemsSelection.map(sel => {
-          const item = menuItems.find(m => m.id === parseInt(sel.id));
-          return {
-            menu_item_id: item.id,
-            quantity: parseInt(sel.quantity) || 1,
-            unit_price: item.price,
-            special_instructions: sel.instructions
-          };
-        }),
-        notes: manualNotes
-      });
+    requireAdminAuth(async () => {
+      try {
+        await api.createOrder({
+          table_id: parseInt(manualTableId),
+          order_source: 'WAITER_MANUAL',
+          items: orderItemsSelection.map(sel => {
+            const item = menuItems.find(m => m.id === parseInt(sel.id));
+            return {
+              menu_item_id: item.id,
+              quantity: parseInt(sel.quantity) || 1,
+              unit_price: item.price,
+              special_instructions: sel.instructions
+            };
+          }),
+          notes: manualNotes
+        });
 
-      setCreateOrderOpen(false);
-      setOrderItemsSelection([]);
-      setManualNotes('');
-      fetchOrders();
-    } catch (err) {
-      alert('Failed to place manual order: ' + err.message);
-    }
+        setCreateOrderOpen(false);
+        setOrderItemsSelection([]);
+        setManualNotes('');
+        fetchOrders();
+      } catch (err) {
+        alert('Failed to place manual order: ' + err.message);
+      }
+    }, 'create manual order');
   };
 
   const handleAddDishToOrder = async (e) => {
@@ -128,24 +136,26 @@ export default function OrdersManagement() {
     const mItem = menuItems.find(m => m.id === parseInt(addDishId));
     if (!mItem) return;
 
-    setAddingDish(true);
-    try {
-      await api.addItemsToOrder(addItemOrder.id, [{
-        menu_item_id: mItem.id,
-        quantity: addDishQty,
-        unit_price: mItem.price,
-        special_instructions: addDishNotes
-      }], 'Staff Orders POS');
-      setAddItemOrder(null);
-      setAddDishId('');
-      setAddDishQty(1);
-      setAddDishNotes('');
-      fetchOrders();
-    } catch (err) {
-      alert('Failed to add dish to order: ' + err.message);
-    } finally {
-      setAddingDish(false);
-    }
+    requireAdminAuth(async () => {
+      setAddingDish(true);
+      try {
+        await api.addItemsToOrder(addItemOrder.id, [{
+          menu_item_id: mItem.id,
+          quantity: addDishQty,
+          unit_price: mItem.price,
+          special_instructions: addDishNotes
+        }], 'Staff Orders POS');
+        setAddItemOrder(null);
+        setAddDishId('');
+        setAddDishQty(1);
+        setAddDishNotes('');
+        fetchOrders();
+      } catch (err) {
+        alert('Failed to add dish to order: ' + err.message);
+      } finally {
+        setAddingDish(false);
+      }
+    }, 'add dish to active order');
   };
 
   const filteredOrders = orders.filter(o => {

@@ -4,6 +4,7 @@ from rest_framework.response import Response
 from .models import Category, MenuItem, MenuItemVariant, MenuAddon
 from .serializers import CategorySerializer, MenuItemSerializer, MenuItemVariantSerializer, MenuAddonSerializer
 from core.models import AuditLog
+from core.views import check_admin_password
 
 @api_view(['GET'])
 def menu_full_catalog_view(request):
@@ -32,6 +33,9 @@ def category_list_create_view(request):
         return Response(CategorySerializer(categories, many=True).data)
 
     if request.method == 'POST':
+        if not check_admin_password(request):
+            return Response({'error': 'Admin password required to create category.'}, status=status.HTTP_403_FORBIDDEN)
+
         serializer = CategorySerializer(data=request.data)
         if serializer.is_valid():
             cat = serializer.save()
@@ -53,6 +57,9 @@ def menu_item_list_create_view(request):
         return Response(MenuItemSerializer(items, many=True).data)
 
     if request.method == 'POST':
+        if not check_admin_password(request):
+            return Response({'error': 'Admin password required to add menu item.'}, status=status.HTTP_403_FORBIDDEN)
+
         serializer = MenuItemSerializer(data=request.data)
         if serializer.is_valid():
             item = serializer.save()
@@ -76,6 +83,10 @@ def menu_item_detail_view(request, pk):
 
     if request.method == 'GET':
         return Response(MenuItemSerializer(item).data)
+
+    if request.method in ['PATCH', 'DELETE', 'PUT']:
+        if not check_admin_password(request):
+            return Response({'error': 'Admin password required to modify or delete menu items.'}, status=status.HTTP_403_FORBIDDEN)
 
     if request.method == 'PATCH':
         serializer = MenuItemSerializer(item, data=request.data, partial=True)
@@ -107,6 +118,9 @@ def menu_item_detail_view(request, pk):
 
 @api_view(['POST'])
 def menu_item_toggle_stock_view(request, pk):
+    if not check_admin_password(request):
+        return Response({'error': 'Admin password required to toggle item availability.'}, status=status.HTTP_403_FORBIDDEN)
+
     try:
         item = MenuItem.objects.get(pk=pk)
     except MenuItem.DoesNotExist:
