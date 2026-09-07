@@ -2207,7 +2207,7 @@ export default function CafeSettings() {
                     type="text"
                     value={newStaffData.username}
                     onChange={e => setNewStaffData({ ...newStaffData, username: e.target.value })}
-                    placeholder="e.g. rahul"
+                    placeholder="rahul"
                     style={{
                       width: '100%',
                       padding: '8px 12px',

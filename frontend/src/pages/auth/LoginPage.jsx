@@ -265,7 +265,7 @@ export default function LoginPage() {
                 <input
                   type="text"
                   required
-                  placeholder="e.g. Owner@10, Cashier@10"
+                  placeholder="Owner@10, Cashier@10"
                   value={username}
                   onChange={e => {
                     setUsername(e.target.value);
@@ -296,7 +296,7 @@ export default function LoginPage() {
                   Password
                 </label>
                 <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                  Same as ID (e.g. <code>Owner@10</code>)
+                  Same as ID (<code>Owner@10</code>)
                 </span>
               </div>
               <div style={{ position: 'relative' }}>

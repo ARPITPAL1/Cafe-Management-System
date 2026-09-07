@@ -659,7 +659,7 @@ export default function Navbar() {
                     type="password"
                     required
                     autoFocus
-                    placeholder={`e.g. ${switchTarget.id}`}
+                    placeholder={switchTarget.id}
                     value={switchPassword}
                     onChange={e => setSwitchPassword(e.target.value)}
                     style={{
