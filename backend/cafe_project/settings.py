@@ -85,10 +85,21 @@ WSGI_APPLICATION = 'cafe_project.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/6.1/ref/settings/#databases
 
+db_file = BASE_DIR / 'db.sqlite3'
+if os.environ.get('VERCEL') or os.environ.get('AWS_LAMBDA_FUNCTION_NAME'):
+    tmp_db = Path('/tmp/db.sqlite3')
+    if not tmp_db.exists() and db_file.exists():
+        import shutil
+        try:
+            shutil.copy2(db_file, tmp_db)
+        except Exception as e:
+            print(f"Failed to copy db to /tmp: {e}")
+    db_file = tmp_db
+
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'NAME': db_file,
     }
 }
 
