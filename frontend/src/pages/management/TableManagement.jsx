@@ -23,9 +23,12 @@ import {
   Users,
   Minus,
   Trash2,
-  UtensilsCrossed
+  UtensilsCrossed,
+  Map,
+  LayoutGrid
 } from 'lucide-react';
 import ReservationsManagementModal from '../../components/ReservationsManagementModal';
+import LiveFloorPlanOrders from '../../components/LiveFloorPlanOrders';
 
 export default function TableManagement() {
   const { cafeInfo, waiterCallAlertsEnabled, toggleWaiterCallAlerts } = useAuth();
@@ -38,6 +41,7 @@ export default function TableManagement() {
   const [loading, setLoading] = useState(true);
   const [activeSection, setActiveSection] = useState('ALL');
   const [selectedQRTable, setSelectedQRTable] = useState(null);
+  const [viewMode, setViewMode] = useState('both'); // 'both' | 'floor' | 'cards'
 
   // Modals
   const [addTableOpen, setAddTableOpen] = useState(false);
@@ -348,6 +352,76 @@ export default function TableManagement() {
             )}
           </button>
 
+          {/* View Mode Toggle: Both / Floor / Cards */}
+          <div style={{
+            display: 'flex',
+            background: 'var(--bg-surface-elevated)',
+            padding: 3,
+            borderRadius: 10,
+            border: '1px solid var(--border-subtle)',
+            gap: 2
+          }}>
+            <button
+              onClick={() => setViewMode('both')}
+              className="btn btn-sm"
+              style={{
+                padding: '5px 10px',
+                fontSize: '0.78rem',
+                fontWeight: 600,
+                border: 'none',
+                background: viewMode === 'both' ? 'var(--bg-surface)' : 'transparent',
+                color: viewMode === 'both' ? 'var(--text-primary)' : 'var(--text-muted)',
+                boxShadow: viewMode === 'both' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                borderRadius: 8
+              }}
+              title="Overview (Floor Plan & Cards)"
+            >
+              Both
+            </button>
+            <button
+              onClick={() => setViewMode('floor')}
+              className="btn btn-sm"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4,
+                padding: '5px 10px',
+                fontSize: '0.78rem',
+                fontWeight: 600,
+                border: 'none',
+                background: viewMode === 'floor' ? 'var(--bg-surface)' : 'transparent',
+                color: viewMode === 'floor' ? 'var(--text-primary)' : 'var(--text-muted)',
+                boxShadow: viewMode === 'floor' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                borderRadius: 8
+              }}
+              title="Visual 2D Floor Plan"
+            >
+              <Map size={13} />
+              <span>Floor Plan</span>
+            </button>
+            <button
+              onClick={() => setViewMode('cards')}
+              className="btn btn-sm"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4,
+                padding: '5px 10px',
+                fontSize: '0.78rem',
+                fontWeight: 600,
+                border: 'none',
+                background: viewMode === 'cards' ? 'var(--bg-surface)' : 'transparent',
+                color: viewMode === 'cards' ? 'var(--text-primary)' : 'var(--text-muted)',
+                boxShadow: viewMode === 'cards' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                borderRadius: 8
+              }}
+              title="Detailed Cards Grid"
+            >
+              <LayoutGrid size={13} />
+              <span>Cards</span>
+            </button>
+          </div>
+
           <button onClick={fetchTables} className="btn btn-secondary btn-sm" title="Refresh floor status">
             <RefreshCw size={14} />
             <span>Refresh</span>
@@ -497,18 +571,36 @@ export default function TableManagement() {
         </div>
       )}
 
-      {/* Section Filters & Status Legend */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        flexWrap: 'wrap',
-        gap: 16,
-        marginBottom: 24,
-        paddingBottom: 16,
-        borderBottom: '1px solid var(--border-subtle)'
-      }}>
-        {/* Section Pills */}
+      {/* Visual 2D Floor Plan & Recent Orders View */}
+      {(viewMode === 'both' || viewMode === 'floor') && (
+        <LiveFloorPlanOrders
+          onAddTable={() => setAddTableOpen(true)}
+          onTableSelect={(tbl) => {
+            const real = tables.find(t => t.id === tbl.id || t.number === tbl.number);
+            if (real) {
+              if (real.status === 'AVAILABLE') handleOpenSession(real);
+              else handleOpenAddItemsModal(real);
+            }
+          }}
+          hideRecentOrders={viewMode === 'floor'}
+        />
+      )}
+
+      {/* Section Filters & Detailed Table Cards */}
+      {(viewMode === 'both' || viewMode === 'cards') && (
+        <>
+          {/* Section Filters & Status Legend */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: 16,
+            marginBottom: 24,
+            paddingBottom: 16,
+            borderBottom: '1px solid var(--border-subtle)'
+          }}>
+            {/* Section Pills */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, overflowX: 'auto', padding: '4px 0' }}>
           {sections.map(sec => (
             <button
@@ -580,6 +672,8 @@ export default function TableManagement() {
             Click "+ Add Table" to add dining tables to this section
           </p>
         </div>
+      )}
+      </>
       )}
 
       {/* Open Table Session Modal */}

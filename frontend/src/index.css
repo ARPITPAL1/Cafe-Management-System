@@ -374,3 +374,11 @@ h1, h2, h3, h4, h5, h6 {
     display: none !important;
   }
 }
+
+/* Responsive Floor Plan & Recent Orders Grid */
+@media (max-width: 1024px) {
+  .live-floor-plan-orders-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+

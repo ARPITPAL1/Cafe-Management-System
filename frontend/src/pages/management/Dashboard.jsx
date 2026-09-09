@@ -18,6 +18,7 @@ import {
   Calendar
 } from 'lucide-react';
 import ReservationsManagementModal from '../../components/ReservationsManagementModal';
+import LiveFloorPlanOrders from '../../components/LiveFloorPlanOrders';
 
 export default function Dashboard() {
   const { user } = useAuth();
@@ -313,6 +314,9 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+
+      {/* Live Visual Floor Plan & Recent Orders Section */}
+      <LiveFloorPlanOrders />
 
       {/* Middle Grid: Hourly Sales Chart + Today's Order State Pipeline */}
       <div style={{
