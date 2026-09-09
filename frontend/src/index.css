@@ -295,25 +295,81 @@ h1, h2, h3, h4, h5, h6 {
   to { transform: translateY(0); opacity: 1; }
 }
 
-/* Print styles for Receipts and KOT */
+/* Print styles for Receipts, KOT, and QR codes */
 @media print {
+  @page {
+    size: auto;
+    margin: 0mm;
+  }
+
+  html, body {
+    background: #fff !important;
+    color: #000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    height: auto !important;
+    min-height: auto !important;
+    overflow: visible !important;
+  }
+
   body * {
     visibility: hidden;
   }
+
+  /* Flatten modal overlays so they do not center or clip the print receipt */
+  .modal-backdrop {
+    position: static !important;
+    display: block !important;
+    inset: auto !important;
+    background: transparent !important;
+    backdrop-filter: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    height: auto !important;
+    width: 100% !important;
+    overflow: visible !important;
+    animation: none !important;
+  }
+
+  .modal-card {
+    position: static !important;
+    display: block !important;
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    max-height: none !important;
+    height: auto !important;
+    overflow: visible !important;
+    transform: none !important;
+    animation: none !important;
+  }
+
   .printable-area, .printable-area * {
-    visibility: visible;
+    visibility: visible !important;
   }
+
   .printable-area {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 80mm;
-    background: #fff;
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 78mm !important;
+    max-width: 78mm !important;
+    margin: 0 auto !important;
+    padding: 4mm 3mm !important;
+    background: #fff !important;
     color: #000 !important;
-    font-family: monospace;
-    font-size: 12px;
-    padding: 10px;
+    font-family: 'Courier New', Courier, monospace !important;
+    font-size: 12px !important;
+    line-height: 1.35 !important;
+    border: none !important;
+    box-shadow: none !important;
+    overflow: visible !important;
   }
+
   .no-print {
     display: none !important;
   }

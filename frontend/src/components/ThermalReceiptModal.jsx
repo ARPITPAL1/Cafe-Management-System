@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Printer, MessageCircle, X, Check, CheckCircle2, Share2 } from 'lucide-react';
 import { api } from '../services/api';
+import { printThermalReceipt } from '../utils/printUtils';
 
 export default function ThermalReceiptModal({ bill, cafeInfo, onClose, onCloseSession }) {
   const [whatsappSent, setWhatsappSent] = useState(false);
@@ -12,7 +13,7 @@ export default function ThermalReceiptModal({ bill, cafeInfo, onClose, onCloseSe
   if (!bill) return null;
 
   const handlePrint = () => {
-    window.print();
+    printThermalReceipt(bill, cafeInfo);
   };
 
   const handleSendWhatsApp = async () => {

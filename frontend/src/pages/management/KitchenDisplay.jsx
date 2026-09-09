@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
+import { printKOT } from '../../utils/printUtils';
 import {
   ChefHat,
   Clock,
@@ -16,7 +17,7 @@ import {
 } from 'lucide-react';
 
 export default function KitchenDisplay() {
-  const { soundAlertsEnabled, toggleSoundAlerts } = useAuth();
+  const { soundAlertsEnabled, toggleSoundAlerts, cafeInfo } = useAuth();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('ALL');
@@ -457,10 +458,10 @@ export default function KitchenDisplay() {
                 {printingOrder.items?.map((item, idx) => (
                   <div key={idx}>
                     <div style={{ fontWeight: 'bold', fontSize: '13px' }}>
-                      {item.quantity} x {item.item_name} {item.variant_name ? `(${item.variant_name})` : ''}
+                      {item.quantity} x {item.item_name || item.menu_item?.name || 'Item'} {item.variant_name ? `(${item.variant_name})` : ''}
                     </div>
                     {item.addons_json?.map((a, aidx) => (
-                      <div key={aidx} style={{ fontSize: '11px', paddingLeft: 12 }}>+ {a.name}</div>
+                      <div key={aidx} style={{ fontSize: '11px', paddingLeft: 12 }}>+ {typeof a === 'object' ? a.name : a}</div>
                     ))}
                     {item.special_instructions && (
                       <div style={{ fontSize: '11px', fontStyle: 'italic', paddingLeft: 12 }}>
@@ -477,7 +478,7 @@ export default function KitchenDisplay() {
               <button onClick={() => setPrintingOrder(null)} className="btn btn-secondary btn-sm">
                 Close
               </button>
-              <button onClick={() => window.print()} className="btn btn-primary btn-sm">
+              <button onClick={() => printKOT(printingOrder, cafeInfo)} className="btn btn-primary btn-sm">
                 <Printer size={14} />
                 <span>Print Ticket</span>
               </button>
