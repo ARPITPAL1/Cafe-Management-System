@@ -60,7 +60,7 @@ export default function OrdersManagement() {
       setMenuItems(allDishes);
     }).catch(console.error);
 
-    const interval = setInterval(fetchOrders, 10000);
+    const interval = setInterval(fetchOrders, 3000); // Polling every 3s for live orders
     return () => clearInterval(interval);
   }, []);
 

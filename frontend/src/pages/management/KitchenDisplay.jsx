@@ -60,7 +60,7 @@ export default function KitchenDisplay() {
 
   useEffect(() => {
     fetchKitchenOrders();
-    const interval = setInterval(fetchKitchenOrders, 6000); // Polling every 6s for live kitchen orders
+    const interval = setInterval(fetchKitchenOrders, 3000); // Polling every 3s for live kitchen orders
     return () => clearInterval(interval);
   }, [soundAlertsEnabled]);
 

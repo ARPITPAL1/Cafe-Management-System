@@ -103,9 +103,9 @@ export default function BillingPOS() {
     }
   };
 
-  const fetchBillData = async (sessionId) => {
+  const fetchBillData = async (sessionId, isBackground = false) => {
     if (!sessionId) return;
-    setLoading(true);
+    if (!isBackground) setLoading(true);
     try {
       const preview = await api.getBillPreview(sessionId);
       setBillPreview(preview);
@@ -120,7 +120,7 @@ export default function BillingPOS() {
     } catch (err) {
       console.error(err);
     } finally {
-      setLoading(false);
+      if (!isBackground) setLoading(false);
     }
   };
 
@@ -133,6 +133,16 @@ export default function BillingPOS() {
     if (selectedSessionId) {
       fetchBillData(selectedSessionId);
     }
+
+    // Auto-poll every 3.5s so cashier gets real-time table status, bill requests, and new item updates
+    const interval = setInterval(() => {
+      fetchActiveTables();
+      if (selectedSessionId) {
+        fetchBillData(selectedSessionId, true);
+      }
+    }, 3500);
+
+    return () => clearInterval(interval);
   }, [selectedSessionId]);
 
   const handleApplyCoupon = async () => {

@@ -43,7 +43,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     fetchDashboard();
-    const interval = setInterval(fetchDashboard, 15000); // Poll every 15s for live dashboard
+    const interval = setInterval(fetchDashboard, 4000); // Poll every 4s for live dashboard
     return () => clearInterval(interval);
   }, []);
 

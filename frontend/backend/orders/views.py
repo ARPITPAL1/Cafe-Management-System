@@ -78,11 +78,17 @@ def order_list_create_view(request):
         else:
             return Response({'error': 'Table or Session identifier is required'}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Check if session has a final bill issued
-        if session and (getattr(session, 'is_bill_issued', False) or session.status in ['PAID']):
+        # Check if session has a final bill issued and settled
+        if session and (session.status in ['PAID', 'CLOSED'] or (getattr(session, 'is_bill_issued', False) and session.status in ['PAID', 'CLOSED'])):
             return Response({
-                'error': 'Final bill has been issued for this session. Your dining session has concluded. Please scan the QR code again and register to start a new session.'
+                'error': 'Final bill has been settled for this session. Your dining session has concluded. Please scan the QR code again and register to start a new session.'
             }, status=status.HTTP_403_FORBIDDEN)
+
+        # If customer adds items while bill was requested, smoothly re-activate session to ACTIVE
+        if session and session.status == 'BILL_REQUESTED':
+            session.status = 'ACTIVE'
+            session.is_bill_issued = False
+            session.save(update_fields=['status', 'is_bill_issued'])
 
         # Open session if none active
         if not session or session.status == 'CLOSED':
@@ -261,8 +267,13 @@ def order_add_items_view(request, pk):
     except Order.DoesNotExist:
         return Response({'error': 'Order not found'}, status=status.HTTP_404_NOT_FOUND)
 
-    if getattr(order.session, 'is_bill_issued', False) or order.session.status in ['PAID', 'CLOSED']:
-        return Response({'error': 'Final bill has already been issued for this session. Cannot add items.'}, status=status.HTTP_403_FORBIDDEN)
+    if order.session.status in ['PAID', 'CLOSED'] or (getattr(order.session, 'is_bill_issued', False) and order.session.status in ['PAID', 'CLOSED']):
+        return Response({'error': 'Final bill has already been settled for this session. Cannot add items.'}, status=status.HTTP_403_FORBIDDEN)
+
+    if order.session.status == 'BILL_REQUESTED':
+        order.session.status = 'ACTIVE'
+        order.session.is_bill_issued = False
+        order.session.save(update_fields=['status', 'is_bill_issued'])
 
     added_by = request.data.get('added_by', 'Staff')
     items_data = request.data.get('items', [])

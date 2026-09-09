@@ -59,6 +59,14 @@ export default function CustomerPortal() {
       if (tRes.active_session) {
         setActiveSession(tRes.active_session);
         setPrebookingLock(null);
+        // Automatically restore verifiedGuest if active session has customer info
+        if (tRes.active_session.customer_name) {
+          setVerifiedGuest(prev => prev || {
+            id: tRes.active_session.customer,
+            name: tRes.active_session.customer_name,
+            phone: tRes.active_session.customer_phone
+          });
+        }
       } else if (tRes.is_locked_for_prebooking) {
         setPrebookingLock(tRes.prebooking_locked_info || true);
       } else {
@@ -73,7 +81,7 @@ export default function CustomerPortal() {
         const orders = await api.getOrders(`session_id=${tRes.active_session.id}&active_only=true`);
         if (orders.length > 0) {
           setActiveOrder(orders[0]);
-          if (tRes.table.status === 'BILL_REQUESTED') {
+          if (tRes.table?.status === 'BILL_REQUESTED' || tRes.active_session?.status === 'BILL_REQUESTED') {
             setBillRequested(true);
           }
         }
@@ -87,30 +95,32 @@ export default function CustomerPortal() {
 
   useEffect(() => {
     fetchTableAndMenu();
-    // Poll order status every 10s if active order exists
-    const interval = setInterval(fetchTableAndMenu, 10000);
+    // Poll order & table status every 5s for live updates
+    const interval = setInterval(fetchTableAndMenu, 5000);
     return () => clearInterval(interval);
   }, [tableToken]);
 
-  // Check if final bill is issued or session is closed/paid
+  // Final bill is only considered terminated when the bill has actually been settled or session closed
   const isSessionTerminated = Boolean(
-    activeSession?.is_bill_issued ||
-    activeSession?.status === 'PAID' ||
     activeSession?.status === 'CLOSED' ||
-    tableData?.status === 'BILL_REQUESTED'
+    activeSession?.status === 'PAID' ||
+    (activeSession?.is_bill_issued && (activeSession?.status === 'PAID' || activeSession?.status === 'CLOSED'))
   );
 
   // Session-based Customer Auto-Auth (OTP bypass during active dining session)
   const [verifiedGuest, setVerifiedGuest] = useState(() => {
     try {
       const saved = localStorage.getItem(`cafe_guest_${tableToken}`);
-      return saved ? JSON.parse(saved) : null;
+      if (saved) return JSON.parse(saved);
+      const cust = localStorage.getItem('cafe_customer');
+      if (cust) return JSON.parse(cust);
     } catch (e) {
       return null;
     }
+    return null;
   });
 
-  // Automatically terminate client session credentials when final bill is issued
+  // Automatically terminate client session credentials ONLY when final bill is settled or session is closed
   useEffect(() => {
     if (isSessionTerminated) {
       try {
@@ -131,12 +141,18 @@ export default function CustomerPortal() {
   const handleProceedToCheckout = () => {
     setCartDrawerOpen(false);
     if (isSessionTerminated) {
-      alert('The final bill has already been issued on your name for this table. The dining session has concluded. Please rescan the table QR code and register with your mobile number to begin a new session.');
+      alert('The final bill has already been settled for this table. The dining session has concluded. Please rescan the table QR code to begin a new session.');
       return;
     }
-    // If guest is already OTP-verified for this active dining session, skip OTP step directly!
-    if (verifiedGuest && activeSession && !isSessionTerminated) {
-      handleVerifiedAndPlaceOrder(verifiedGuest);
+    // If guest is already known (in verifiedGuest, CartContext customer, or active session), skip OTP directly!
+    const effectiveGuest = verifiedGuest || customer || (activeSession?.customer_name ? {
+      id: activeSession.customer,
+      name: activeSession.customer_name,
+      phone: activeSession.customer_phone
+    } : null);
+
+    if (effectiveGuest && !isSessionTerminated) {
+      handleVerifiedAndPlaceOrder(effectiveGuest);
     } else {
       setOtpModalOpen(true);
     }
@@ -147,12 +163,14 @@ export default function CustomerPortal() {
     setVerifiedGuest(cust);
     try {
       localStorage.setItem(`cafe_guest_${tableToken}`, JSON.stringify(cust));
+      localStorage.setItem('cafe_customer', JSON.stringify(cust));
     } catch (e) {}
 
     try {
       const orderPayload = {
         table_token: tableToken,
         customer_id: cust.id,
+        session_id: activeSession?.id,
         order_source: 'QR',
         items: cartItems.map(ci => ({
           menu_item_id: ci.item.id,
@@ -168,6 +186,7 @@ export default function CustomerPortal() {
       const res = await api.createOrder(orderPayload);
       clearCart();
       setActiveOrder(res);
+      setBillRequested(false); // Reset bill requested state since guest ordered more items
 
       // Celebratory Confetti!
       try {
@@ -186,6 +205,7 @@ export default function CustomerPortal() {
 
   const handleSwitchGuest = () => {
     localStorage.removeItem(`cafe_guest_${tableToken}`);
+    localStorage.removeItem('cafe_customer');
     setVerifiedGuest(null);
     setCartDrawerOpen(false);
     setOtpModalOpen(true);
@@ -467,7 +487,7 @@ export default function CustomerPortal() {
         </Link>
       </div>
 
-      {/* Session Terminated / Final Bill Issued Banner */}
+      {/* Session Terminated / Final Bill Settled Banner */}
       {isSessionTerminated && (
         <div style={{
           margin: '14px 18px',
@@ -480,11 +500,10 @@ export default function CustomerPortal() {
         }}>
           <div style={{ fontSize: '2.2rem', marginBottom: 6 }}>🧾</div>
           <h3 style={{ fontSize: '1.2rem', fontWeight: 800, color: '#991b1b' }}>
-            Final Bill Issued • Session Concluded
+            Final Bill Settled • Session Concluded
           </h3>
           <p style={{ fontSize: '0.84rem', color: '#b91c1c', marginTop: 6, lineHeight: 1.5 }}>
-            The final bill has been generated on your name for Table {tableData.number}. This dining session has concluded.
-            You cannot call the waiter or place new orders in this session.
+            The bill has been settled for Table {tableData.number}. This dining session has concluded.
           </p>
           <div style={{
             marginTop: 12,
@@ -496,7 +515,7 @@ export default function CustomerPortal() {
             fontWeight: 600,
             border: '1px solid #fca5a5'
           }}>
-            To order again or request service, please re-scan the QR code and register with your mobile number.
+            Thank you for dining with us! To start a new dining session, please re-scan the QR code.
           </div>
           <button
             onClick={() => {
@@ -507,6 +526,44 @@ export default function CustomerPortal() {
             style={{ background: '#dc2626', color: '#fff', border: 'none', fontWeight: 800, marginTop: 14, width: '100%', padding: '10px' }}
           >
             🔄 Re-scan / Refresh Table Session
+          </button>
+        </div>
+      )}
+
+      {/* Bill Requested Notice (Non-blocking: customer can still order more before settlement) */}
+      {!isSessionTerminated && (billRequested || tableData?.status === 'BILL_REQUESTED') && (
+        <div style={{
+          margin: '14px 18px',
+          background: 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)',
+          border: '1.5px solid #f59e0b',
+          borderRadius: 'var(--radius-md)',
+          padding: '14px 16px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 12,
+          boxShadow: '0 2px 8px rgba(245,158,11,0.15)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ fontSize: '1.4rem' }}>🧾</div>
+            <div>
+              <div style={{ fontWeight: 800, fontSize: '0.88rem', color: '#92400e' }}>
+                Bill Requested • Cashier Preparing Invoice
+              </div>
+              <div style={{ fontSize: '0.74rem', color: '#b45309', marginTop: 2 }}>
+                Want to add more dishes or drinks before paying? You can still add items below!
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={() => {
+              const menuEl = document.getElementById('menu-feed-section');
+              if (menuEl) menuEl.scrollIntoView({ behavior: 'smooth' });
+            }}
+            className="btn btn-sm"
+            style={{ background: '#d97706', color: '#fff', border: 'none', fontWeight: 700, fontSize: '0.74rem', padding: '6px 12px', whiteSpace: 'nowrap' }}
+          >
+            + Add Dishes
           </button>
         </div>
       )}

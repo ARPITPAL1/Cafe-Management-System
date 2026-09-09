@@ -20,7 +20,10 @@ import {
   Bell,
   BellOff,
   Calendar,
-  Users
+  Users,
+  Minus,
+  Trash2,
+  UtensilsCrossed
 } from 'lucide-react';
 import ReservationsManagementModal from '../../components/ReservationsManagementModal';
 
@@ -45,12 +48,12 @@ export default function TableManagement() {
     floor_section: 'Indoor Main Hall'
   });
 
-  // Add dish to table modal state
+  // Add dishes to table modal state (Multi-Item Order Builder)
   const [addDishTable, setAddDishTable] = useState(null);
   const [menuItems, setMenuItems] = useState([]);
-  const [selectedDishId, setSelectedDishId] = useState('');
-  const [dishQty, setDishQty] = useState(1);
-  const [dishNotes, setDishNotes] = useState('');
+  const [stagedItems, setStagedItems] = useState([]); // [{ item, quantity, notes }]
+  const [dishSearch, setDishSearch] = useState('');
+  const [dishCategoryFilter, setDishCategoryFilter] = useState('ALL');
   const [submittingDish, setSubmittingDish] = useState(false);
 
   // View order dishes modal state
@@ -92,7 +95,7 @@ export default function TableManagement() {
       setMenuItems(allDishes);
     }).catch(console.error);
 
-    const interval = setInterval(fetchTables, 10000); // Poll every 10s
+    const interval = setInterval(fetchTables, 3000); // Poll every 3s for live table status
     return () => clearInterval(interval);
   }, []);
 
@@ -161,53 +164,84 @@ export default function TableManagement() {
     }
   };
 
+  const handleOpenAddItemsModal = (tbl) => {
+    setAddDishTable(tbl);
+    setStagedItems([]);
+    setDishSearch('');
+    setDishCategoryFilter('ALL');
+  };
+
+  const handleStageItem = (mItem, qtyDelta = 1) => {
+    setStagedItems(prev => {
+      const idx = prev.findIndex(p => p.item.id === mItem.id);
+      if (idx > -1) {
+        const newQty = prev[idx].quantity + qtyDelta;
+        if (newQty <= 0) {
+          return prev.filter((_, i) => i !== idx);
+        }
+        const copy = [...prev];
+        copy[idx] = { ...copy[idx], quantity: newQty };
+        return copy;
+      } else if (qtyDelta > 0) {
+        return [...prev, { item: mItem, quantity: qtyDelta, notes: '' }];
+      }
+      return prev;
+    });
+  };
+
+  const handleUpdateStagedNotes = (itemId, notes) => {
+    setStagedItems(prev => prev.map(p => p.item.id === itemId ? { ...p, notes } : p));
+  };
+
+  const handleRemoveStagedItem = (itemId) => {
+    setStagedItems(prev => prev.filter(p => p.item.id !== itemId));
+  };
+
+  const handleClearStaged = () => {
+    setStagedItems([]);
+    setDishSearch('');
+  };
+
   const handleAddDishSubmit = async (e) => {
-    e.preventDefault();
-    if (!selectedDishId || !addDishTable) return;
+    if (e) e.preventDefault();
+    if (stagedItems.length === 0 || !addDishTable) return;
     setSubmittingDish(true);
 
     try {
-      const session = addDishTable.active_session;
+      let session = addDishTable.active_session;
       if (!session) {
-        alert('No active session on this table. Opening session first...');
-        await api.openTableSession(addDishTable.id);
+        const sessionRes = await api.openTableSession(addDishTable.id);
+        session = sessionRes;
       }
 
       // Check if there is an existing active order to append to, or create one
       const ordersRes = await api.getOrders(`session_id=${session ? session.id : ''}&active_only=true`);
       const existingOrder = ordersRes.length > 0 ? ordersRes[0] : null;
 
-      const mItem = menuItems.find(m => m.id === parseInt(selectedDishId));
-      if (!mItem) return;
+      const itemsPayload = stagedItems.map(si => ({
+        menu_item_id: si.item.id,
+        quantity: si.quantity,
+        unit_price: si.item.price,
+        special_instructions: si.notes || ''
+      }));
 
       if (existingOrder) {
-        await api.addItemsToOrder(existingOrder.id, [{
-          menu_item_id: mItem.id,
-          quantity: dishQty,
-          unit_price: mItem.price,
-          special_instructions: dishNotes
-        }], 'Staff POS');
+        await api.addItemsToOrder(existingOrder.id, itemsPayload, 'Manager POS');
       } else {
         await api.createOrder({
           table_id: addDishTable.id,
           order_source: 'WAITER_MANUAL',
-          items: [{
-            menu_item_id: mItem.id,
-            quantity: dishQty,
-            unit_price: mItem.price,
-            special_instructions: dishNotes
-          }],
-          notes: 'Added manually by waiter POS'
+          items: itemsPayload,
+          notes: 'Added via Manager Table POS'
         });
       }
 
       setAddDishTable(null);
-      setSelectedDishId('');
-      setDishQty(1);
-      setDishNotes('');
-      fetchTables();
+      setStagedItems([]);
+      setDishSearch('');
+      await fetchTables();
     } catch (err) {
-      alert('Failed to add dish: ' + err.message);
+      alert('Failed to add dishes: ' + err.message);
     } finally {
       setSubmittingDish(false);
     }
@@ -525,7 +559,7 @@ export default function TableManagement() {
               onOpenQR={setSelectedQRTable}
               onOpenSession={handleOpenSession}
               onCloseSession={handleCloseSession}
-              onAddDish={(tbl) => setAddDishTable(tbl)}
+              onAddDish={handleOpenAddItemsModal}
               onOpenBilling={handleOpenBilling}
               onViewOrder={handleViewOrder}
               onDismissWaiter={handleDismissWaiter}
@@ -823,105 +857,365 @@ export default function TableManagement() {
         </div>
       )}
 
-      {/* Add Dish To Table Modal (Waiter POS) */}
+      {/* Add Dishes To Table Modal (Manager Multi-Item POS) */}
       {addDishTable && (
         <div className="modal-backdrop" onClick={() => setAddDishTable(null)}>
-          <div className="modal-card" onClick={e => e.stopPropagation()} style={{ maxWidth: 460, padding: 24 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
-              <div>
-                <h3 style={{ fontSize: '1.2rem' }}>Add Dish to {addDishTable.number}</h3>
-                <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                  Waiter POS order entry (automatically routed to Kitchen KDS)
-                </p>
+          <div className="modal-card" onClick={e => e.stopPropagation()} style={{ maxWidth: 740, width: '95%', maxHeight: '90vh', display: 'flex', flexDirection: 'column', padding: 24, overflow: 'hidden' }}>
+            {/* Header */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, borderBottom: '1px solid var(--border-subtle)', paddingBottom: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{
+                  width: 42,
+                  height: 42,
+                  borderRadius: 10,
+                  background: 'var(--accent-gold-dim)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: 'var(--accent-gold)'
+                }}>
+                  <UtensilsCrossed size={22} />
+                </div>
+                <div>
+                  <h3 style={{ fontSize: '1.25rem', fontWeight: 800, margin: 0, color: 'var(--text-primary)' }}>
+                    Add Dishes to {addDishTable.number}
+                  </h3>
+                  <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '2px 0 0' }}>
+                    Manager Multi-Item POS • {addDishTable.active_session ? `Active Session #${addDishTable.active_session.session_code}` : 'Table Available (Session will open automatically)'}
+                  </p>
+                </div>
               </div>
-              <button onClick={() => setAddDishTable(null)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>
+              <button
+                onClick={() => setAddDishTable(null)}
+                style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 4 }}
+              >
                 <X size={20} />
               </button>
             </div>
 
-            <form onSubmit={handleAddDishSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
-                  Select Dish from Menu
-                </label>
-                <select
-                  required
-                  value={selectedDishId}
-                  onChange={e => setSelectedDishId(e.target.value)}
+            {/* Filter Bar: Category & Search */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', marginBottom: 14 }}>
+              <div style={{ position: 'relative', flex: '1 1 200px' }}>
+                <Search size={15} color="var(--text-muted)" style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)' }} />
+                <input
+                  type="text"
+                  placeholder="Search dishes to add..."
+                  value={dishSearch}
+                  onChange={e => setDishSearch(e.target.value)}
                   style={{
                     width: '100%',
-                    padding: '10px 14px',
+                    padding: '8px 12px 8px 34px',
                     borderRadius: 'var(--radius-sm)',
                     background: 'var(--bg-surface-elevated)',
                     border: '1px solid var(--border-medium)',
                     color: 'var(--text-primary)',
-                    fontFamily: 'inherit'
+                    fontSize: '0.84rem'
                   }}
+                />
+              </div>
+
+              {/* Category Pills */}
+              <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 2, maxWidth: '100%' }}>
+                {['ALL', ...new Set(menuItems.map(m => m.category_name).filter(Boolean))].map(cat => (
+                  <button
+                    key={cat}
+                    type="button"
+                    onClick={() => setDishCategoryFilter(cat)}
+                    style={{
+                      padding: '5px 10px',
+                      borderRadius: 16,
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      border: '1px solid',
+                      borderColor: dishCategoryFilter === cat ? 'var(--accent-gold)' : 'var(--border-subtle)',
+                      background: dishCategoryFilter === cat ? 'var(--accent-gold-dim)' : 'transparent',
+                      color: dishCategoryFilter === cat ? 'var(--accent-gold)' : 'var(--text-secondary)',
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap'
+                    }}
+                  >
+                    {cat}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* 2-Column Split: Left = Menu Dish Catalog, Right = Staged Items */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: '1.2fr 1fr',
+              gap: 16,
+              flex: 1,
+              minHeight: 0,
+              overflow: 'hidden'
+            }}>
+              {/* Left Column: Menu Dishes to Pick */}
+              <div style={{
+                border: '1px solid var(--border-subtle)',
+                borderRadius: 'var(--radius-sm)',
+                background: 'var(--bg-surface-elevated)',
+                display: 'flex',
+                flexDirection: 'column',
+                minHeight: 0
+              }}>
+                <div style={{
+                  padding: '8px 12px',
+                  background: 'var(--bg-main)',
+                  borderBottom: '1px solid var(--border-subtle)',
+                  fontSize: '0.78rem',
+                  fontWeight: 700,
+                  color: 'var(--text-secondary)',
+                  display: 'flex',
+                  justifyContent: 'space-between'
+                }}>
+                  <span>Menu Catalog</span>
+                  <span>{menuItems.filter(m => (dishCategoryFilter === 'ALL' || m.category_name === dishCategoryFilter) && (!dishSearch || m.name.toLowerCase().includes(dishSearch.toLowerCase()))).length} items</span>
+                </div>
+
+                <div style={{ flex: 1, overflowY: 'auto', padding: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {menuItems
+                    .filter(m => (dishCategoryFilter === 'ALL' || m.category_name === dishCategoryFilter) && (!dishSearch || m.name.toLowerCase().includes(dishSearch.toLowerCase())))
+                    .map(item => {
+                      const staged = stagedItems.find(s => s.item.id === item.id);
+                      return (
+                        <div
+                          key={item.id}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '8px 10px',
+                            background: staged ? 'rgba(212,163,115,0.08)' : 'var(--bg-surface)',
+                            border: `1px solid ${staged ? 'var(--accent-gold)' : 'var(--border-subtle)'}`,
+                            borderRadius: 'var(--radius-sm)',
+                            transition: 'all 0.15s ease'
+                          }}
+                        >
+                          <div style={{ minWidth: 0, flex: 1, marginRight: 8 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <span style={{ fontSize: '0.75rem' }}>{item.is_veg ? '🟢' : '🔴'}</span>
+                              <span style={{ fontWeight: 700, fontSize: '0.84rem', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {item.name}
+                              </span>
+                            </div>
+                            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 2 }}>
+                              ₹{item.price} • {item.category_name}
+                            </div>
+                          </div>
+
+                          {staged ? (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--bg-main)', padding: '3px 6px', borderRadius: 4, border: '1px solid var(--border-medium)' }}>
+                              <button
+                                type="button"
+                                onClick={() => handleStageItem(item, -1)}
+                                style={{ background: 'transparent', border: 'none', color: 'var(--text-primary)', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: 2 }}
+                              >
+                                <Minus size={13} />
+                              </button>
+                              <span style={{ fontWeight: 800, fontSize: '0.82rem', minWidth: 18, textAlign: 'center', color: 'var(--accent-gold)' }}>
+                                {staged.quantity}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleStageItem(item, 1)}
+                                style={{ background: 'transparent', border: 'none', color: 'var(--text-primary)', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: 2 }}
+                              >
+                                <Plus size={13} />
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleStageItem(item, 1)}
+                              className="btn btn-secondary btn-sm"
+                              style={{ padding: '4px 10px', fontSize: '0.74rem', height: 28, display: 'flex', alignItems: 'center', gap: 4 }}
+                            >
+                              <Plus size={13} />
+                              <span>Add</span>
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+
+              {/* Right Column: Staged Basket with Notes */}
+              <div style={{
+                border: '1px solid var(--border-subtle)',
+                borderRadius: 'var(--radius-sm)',
+                background: 'var(--bg-surface-elevated)',
+                display: 'flex',
+                flexDirection: 'column',
+                minHeight: 0
+              }}>
+                <div style={{
+                  padding: '8px 12px',
+                  background: 'var(--bg-main)',
+                  borderBottom: '1px solid var(--border-subtle)',
+                  fontSize: '0.78rem',
+                  fontWeight: 700,
+                  color: 'var(--text-secondary)',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center'
+                }}>
+                  <span>Items to Add ({stagedItems.reduce((sum, s) => sum + s.quantity, 0)})</span>
+                  {stagedItems.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleClearStaged}
+                      style={{ background: 'transparent', border: 'none', color: '#ef4444', fontSize: '0.72rem', cursor: 'pointer', fontWeight: 600 }}
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+
+                <div style={{ flex: 1, overflowY: 'auto', padding: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {stagedItems.length === 0 ? (
+                    <div style={{ padding: '40px 16px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.82rem' }}>
+                      <ShoppingBag size={28} style={{ margin: '0 auto 8px', opacity: 0.4 }} />
+                      <div>No items selected yet.</div>
+                      <div style={{ fontSize: '0.72rem', marginTop: 4 }}>
+                        Click <strong>+ Add</strong> on dishes from the left to stage multiple items for this table.
+                      </div>
+                    </div>
+                  ) : (
+                    stagedItems.map(staged => (
+                      <div
+                        key={staged.item.id}
+                        style={{
+                          background: 'var(--bg-surface)',
+                          border: '1px solid var(--border-subtle)',
+                          borderRadius: 'var(--radius-sm)',
+                          padding: '8px 10px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: 6
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <div>
+                            <div style={{ fontWeight: 700, fontSize: '0.84rem', color: 'var(--text-primary)' }}>
+                              {staged.item.name}
+                            </div>
+                            <div style={{ fontSize: '0.72rem', color: 'var(--accent-gold)', fontWeight: 600 }}>
+                              ₹{staged.item.price} × {staged.quantity} = ₹{(staged.item.price * staged.quantity).toFixed(2)}
+                            </div>
+                          </div>
+
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'var(--bg-surface-elevated)', padding: '2px 4px', borderRadius: 4, border: '1px solid var(--border-subtle)' }}>
+                              <button
+                                type="button"
+                                onClick={() => handleStageItem(staged.item, -1)}
+                                style={{ background: 'transparent', border: 'none', color: 'var(--text-primary)', cursor: 'pointer', padding: 2 }}
+                              >
+                                <Minus size={12} />
+                              </button>
+                              <span style={{ fontWeight: 800, fontSize: '0.78rem', minWidth: 16, textAlign: 'center' }}>
+                                {staged.quantity}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleStageItem(staged.item, 1)}
+                                style={{ background: 'transparent', border: 'none', color: 'var(--text-primary)', cursor: 'pointer', padding: 2 }}
+                              >
+                                <Plus size={12} />
+                              </button>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveStagedItem(staged.item.id)}
+                              style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 2 }}
+                              title="Remove item"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Note Input */}
+                        <input
+                          type="text"
+                          placeholder="Chef notes (e.g. less spicy, no onions)..."
+                          value={staged.notes || ''}
+                          onChange={e => handleUpdateStagedNotes(staged.item.id, e.target.value)}
+                          style={{
+                            width: '100%',
+                            padding: '4px 8px',
+                            fontSize: '0.72rem',
+                            borderRadius: 4,
+                            background: 'var(--bg-surface-elevated)',
+                            border: '1px solid var(--border-subtle)',
+                            color: 'var(--text-primary)'
+                          }}
+                        />
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                {stagedItems.length > 0 && (
+                  <div style={{
+                    padding: '8px 12px',
+                    background: 'var(--bg-main)',
+                    borderTop: '1px solid var(--border-subtle)',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    fontSize: '0.82rem'
+                  }}>
+                    <span style={{ color: 'var(--text-muted)' }}>Estimated Subtotal:</span>
+                    <strong style={{ color: 'var(--accent-gold)', fontSize: '0.95rem' }}>
+                      ₹{stagedItems.reduce((sum, s) => sum + (s.item.price * s.quantity), 0).toFixed(2)}
+                    </strong>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Bottom Modal Actions */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginTop: 16,
+              paddingTop: 12,
+              borderTop: '1px solid var(--border-subtle)'
+            }}>
+              <div style={{ fontSize: '0.84rem', color: 'var(--text-secondary)' }}>
+                {stagedItems.length > 0 ? (
+                  <span>
+                    Selected: <strong style={{ color: 'var(--text-primary)' }}>{stagedItems.reduce((sum, s) => sum + s.quantity, 0)} dishes</strong> (₹{stagedItems.reduce((sum, s) => sum + (s.item.price * s.quantity), 0).toFixed(2)})
+                  </span>
+                ) : (
+                  <span style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>Select dishes from the catalog to build the order</span>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button
+                  type="button"
+                  onClick={() => setAddDishTable(null)}
+                  className="btn btn-secondary btn-sm"
+                  style={{ padding: '8px 16px' }}
                 >
-                  <option value="">-- Choose item --</option>
-                  {menuItems.map(item => (
-                    <option key={item.id} value={item.id}>
-                      {item.is_veg ? '🟢' : '🔴'} {item.name} — ₹{item.price} ({item.category_name})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '100px 1fr', gap: 12 }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
-                    Quantity
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="20"
-                    required
-                    value={dishQty}
-                    onChange={e => setDishQty(parseInt(e.target.value) || 1)}
-                    style={{
-                      width: '100%',
-                      padding: '10px 14px',
-                      borderRadius: 'var(--radius-sm)',
-                      background: 'var(--bg-surface-elevated)',
-                      border: '1px solid var(--border-medium)',
-                      color: 'var(--text-primary)',
-                      fontFamily: 'inherit'
-                    }}
-                  />
-                </div>
-
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
-                    Chef Notes / Instructions
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Extra spicy, no onions, gluten free"
-                    value={dishNotes}
-                    onChange={e => setDishNotes(e.target.value)}
-                    style={{
-                      width: '100%',
-                      padding: '10px 14px',
-                      borderRadius: 'var(--radius-sm)',
-                      background: 'var(--bg-surface-elevated)',
-                      border: '1px solid var(--border-medium)',
-                      color: 'var(--text-primary)',
-                      fontFamily: 'inherit'
-                    }}
-                  />
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 8 }}>
-                <button type="button" onClick={() => setAddDishTable(null)} className="btn btn-secondary btn-sm">
                   Cancel
                 </button>
-                <button type="submit" disabled={submittingDish || !selectedDishId} className="btn btn-primary btn-sm">
-                  {submittingDish ? 'Adding...' : 'Add to Kitchen Order'}
+                <button
+                  type="button"
+                  disabled={submittingDish || stagedItems.length === 0}
+                  onClick={handleAddDishSubmit}
+                  className="btn btn-primary btn-sm"
+                  style={{ padding: '8px 20px', fontWeight: 800 }}
+                >
+                  {submittingDish ? 'Submitting to Kitchen...' : `Send ${stagedItems.reduce((sum, s) => sum + s.quantity, 0)} Items to Kitchen`}
                 </button>
               </div>
-            </form>
+            </div>
           </div>
         </div>
       )}
@@ -992,11 +1286,11 @@ export default function TableManagement() {
                 onClick={() => {
                   const tbl = viewOrderTable;
                   setViewOrderTable(null);
-                  setAddDishTable(tbl);
+                  handleOpenAddItemsModal(tbl);
                 }}
                 className="btn btn-secondary btn-sm"
               >
-                + Add Another Dish
+                + Add Dishes to Order
               </button>
               <button
                 onClick={() => {

@@ -261,11 +261,11 @@ def call_waiter_view(request, token):
     except Table.DoesNotExist:
         return Response({'error': 'Table not found'}, status=status.HTTP_404_NOT_FOUND)
 
-    # Check if final bill has been issued on the table's active session
+    # Check if final bill has been settled on the table's active session
     session = table.get_current_session()
-    if session and (getattr(session, 'is_bill_issued', False) or session.status in ['PAID', 'CLOSED']):
+    if session and (session.status in ['PAID', 'CLOSED'] or (getattr(session, 'is_bill_issued', False) and session.status in ['PAID', 'CLOSED'])):
         return Response({
-            'error': 'Final bill has been issued on your name for this session. Your dining session has concluded. You cannot call the waiter. Please scan the QR code again to start a new session.'
+            'error': 'Final bill has been settled for this session. Your dining session has concluded. You cannot call the waiter. Please scan the QR code again to start a new session.'
         }, status=status.HTTP_403_FORBIDDEN)
 
     table.waiter_called = True
@@ -341,9 +341,9 @@ def request_essentials_view(request, token):
         return Response({'error': 'Table not found'}, status=status.HTTP_404_NOT_FOUND)
 
     session = table.get_current_session()
-    if session and (getattr(session, 'is_bill_issued', False) or session.status in ['PAID', 'CLOSED']):
+    if session and (session.status in ['PAID', 'CLOSED'] or (getattr(session, 'is_bill_issued', False) and session.status in ['PAID', 'CLOSED'])):
         return Response({
-            'error': 'Final bill has been issued on your name for this session. Your dining session has concluded. You cannot request items. Please scan the QR code again to start a new session.'
+            'error': 'Final bill has been settled for this session. Your dining session has concluded. You cannot request items. Please scan the QR code again to start a new session.'
         }, status=status.HTTP_403_FORBIDDEN)
 
     items = request.data.get('items', [])
